@@ -5,6 +5,7 @@ import utils
 from corpus import document, corpus
 from itertools import izip
 import random
+import cPickle
 
 from scipy.special import digamma as _digamma, gammaln as _gammaln
 
@@ -55,19 +56,15 @@ class online_hdp:
     ''' hdp model using stick breaking'''
     def __init__(self, T, K, D, W, eta, alpha, gamma, kappa, tau, dim = 500, scale=1.0, adding_noise=False):
         """
-        this follows the convention of the HDP paper
         gamma: first level concentration
         alpha: second level concentration
-        eta: the topic Dirichlet
         T: top level truncation level
         K: second level truncation level
-        W: size of vocab
         D: number of documents in the corpus
         kappa: learning rate
         tau: slow down parameter
         """
 
-        self.m_W = W # size of vocab
         self.m_D = D # number of doc
         self.m_T = T # Top level truncation
         self.m_K = K # second level truncation
@@ -269,4 +266,10 @@ class online_hdp:
         self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
         var_phi_sum = np.flipud(self.m_varphi_ss[1:])
         self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
-
+    def save_model(self, output):
+        model = {'sticks':self.m_var_sticks,
+                'means': self.m_means,
+                'dof':self.m_dof,
+                'scale':self.m_scale}
+        
+        cPickle.dump(model, output)
