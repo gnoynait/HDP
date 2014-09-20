@@ -42,8 +42,8 @@ class suff_stats:
         self.m_var_beta_ss = np.zeros((T, Dim))
         # Wt is the vector's dimension
         self.m_var_mean_ss = np.zeros((self.m_T, self.m_dim))
-        self.m_var_prec_1 = np.zeros(self.m_T)
-        self.m_var_prec_2 = np.zeros(self.m_T)
+        self.m_var_prec_a = np.zeros(self.m_T)
+        self.m_var_prec_b = np.zeros(self.m_T)
 
 class online_hdp:
     ''' hdp model using stick breaking'''
@@ -107,7 +107,7 @@ class online_hdp:
     
         return (score, count, unseen_score, unseen_count) 
 
-    def doc_e_step(self, cop, ss, Elogsticks_1st, \
+    def doc_e_step(self, X, ss, Elogsticks_1st, \
                    word_list, unique_words, var_converge, \
                    max_iter=100):
         """
@@ -124,7 +124,7 @@ class online_hdp:
         Elogsticks_2nd = expect_log_sticks(v)
 
         # back to the uniform
-        phi = np.ones((cop.shape[0], self.m_K)) * 1.0/self.m_K
+        phi = np.ones((X.shape[0], self.m_K)) * 1.0/self.m_K
 
         likelihood = 0.0
         old_likelihood = -1e100
@@ -133,16 +133,12 @@ class online_hdp:
         
         iter = 0
 
-        diff2 = np.array((X.shape[0], self.m_T))
+        diff2 = square_diff(X)
         for s in range(X.shape[0]):
             diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
         #Eloggauss:P(X|topic k), shape: sample, topic
-        Eloggauss = np.array((X.shape[0], self.m_T))
-        Eloggauss -= (diff2 + self.m_dim) * 0.5 * self.m_dof / self.m_scale
-        Eloggauss += self.m_dim * 0.5 * (digamma(self.m_dof) - np.log(self.m_scale))
-        Eloggauss -= 0.5 * self.m_dim * np.log(2 * np.pi) + np.log(2 * np.pi * np.e)
+        Eloggauss = E_log_gauss_diff2(diff2)
 
-        # not yet support second level optimization yet, to be done in the future
         while iter < max_iter and (converge < 0.0 or converge > var_converge):
             ### update variational parameters
             # var_phi 
@@ -166,13 +162,13 @@ class online_hdp:
                 phi = np.exp(log_phi)
 
             # v
-            #phi_all = phi * np.array(doc.counts)[:,np.newaxis]
             phi_all = phi[:, np.newaxis]
             v[0] = 1.0 + np.sum(phi_all[:,:self.m_K-1], 0)
             phi_cum = np.flipud(np.sum(phi_all[:,1:], 0))
             v[1] = self.m_alpha + np.flipud(np.cumsum(phi_cum))
             Elogsticks_2nd = expect_log_sticks(v)
 
+            ## TODO: likelihood need complete
             likelihood = 0.0
             # compute likelihood
             # var_phi part/ C in john's notation
@@ -204,13 +200,32 @@ class online_hdp:
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
         ss.m_var_beta_ss[:, batchids] += np.dot(var_phi.T, phi.T * doc.counts)
         z = np.dot(var_phi, phi)
-        prs = (self.m_dof * self.m_scale)[:, np.newaxis]
-        ss.m_var_mean_ss += np.dot(z.T, cop - self.m_means) * prs
+        prs = (self.m_dof / self.m_scale)[:, np.newaxis]
+        for k in range(self.m_K):
+            ss.m_var_mean_ss[k] += np.sum((X - self.m_means[k]) * prs, axis = 0)
 
-        ss.m_var_prec_1 += np.sum(z, axis = 0)
-        ss.m_var_prec_2 += np.sum(z * diff2, axis = 0)
+        ss.m_var_prec_a += np.sum(z, axis = 0)
+        ss.m_var_prec_b += np.sum(z * (diff2 + self.m_dim), axis = 0)
 
         return(likelihood)
+
+    def square_diff(self, X):
+        ## return each the square of the distance bettween x and every mean
+        diff2 = np.empty((X.shape[0], self.m_T))
+        for s in range(X.shape[0]):
+            diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
+        return diff2
+
+    def E_log_gauss(self, X):
+        diff2 = square_diff(X)
+        return E_log_guassion_diff2(diff2)
+
+    def E_log_guass_diff2(self, diff2):
+        Eloggauss = np.zeros((diff2.shape[0], self.m_T))
+        Eloggauss -= (diff2 + self.m_dim) * (0.5 * self.m_dof / self.m_scale)
+        Eloggauss += self.m_dim * 0.5 * (digamma(self.m_dof) - np.log(self.m_scale))
+        ## TODO: do we need to plus log(2 * pi * e) ??
+        Eloggauss -= 0.5 * self.m_dim * np.log(2 * np.pi)# + np.log(2 * np.pi * np.e)
 
     def update_model(self, sstats):
         self.m_status_up_to_date = False
@@ -229,13 +244,8 @@ class online_hdp:
         self.m_means = (1 - rhot) * self.m_means \
             + rhot * self.m_D * sstats.m_var_mean_ss / sstats.m_batchsize
 
-        dof = 1 + self.m_T * ss.m_var_prec_1
-        scale = 1 + 0.5 * (ss.m_var_prec_2 + ss.m_var_prec_1 * self.m_T)
-
-        self.m_dof = self.m_dof * (1 - rhot) + \
-            rhot * dof * self.m_D / sstats.m_batchsize
-        self.m_scale = self.m_scale * (1 - rhot) + \
-            rhot * scale * self.m_D / sstats.m_batchsize
+        self.m_dof = 1 + 0.5 * self.m_dim * ss.m_var_prec_a
+        self.m_scale = 1 + 0.5 * (ss.m_var_prec_b)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
