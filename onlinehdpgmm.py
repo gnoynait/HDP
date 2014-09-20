@@ -36,24 +36,18 @@ def expect_log_sticks(sticks):
     return Elogsticks 
 
 class suff_stats:
-    def __init__(self, T, Wt, Dt):
-        self.m_batchsize = Dt
+    def __init__(self, T, Dim, size):
+        self.m_batchsize = size
         self.m_var_sticks_ss = np.zeros(T) 
-        self.m_var_beta_ss = np.zeros((T, Wt))
+        self.m_var_beta_ss = np.zeros((T, Dim))
         # Wt is the vector's dimension
-        self.m_var_mean_1 = np.zeros((self.m_T, self.m_dim))
-        self.m_var_mean_2 = np.zeros(self.m_T)
+        self.m_var_mean_ss = np.zeros((self.m_T, self.m_dim))
         self.m_var_prec_1 = np.zeros(self.m_T)
         self.m_var_prec_2 = np.zeros(self.m_T)
-    
-    def set_zero(self):
-        self.m_var_sticks_ss.fill(0.0)
-        self.m_var_beta_ss.fill(0.0)
-        self.m_var_mean_ss.fill(0.0)
 
 class online_hdp:
     ''' hdp model using stick breaking'''
-    def __init__(self, T, K, D, alpha, gamma, kappa, tau, dim = 500, scale=1.0, adding_noise=False):
+    def __init__(self, T, K, D, alpha, gamma, kappa, tau, dim = 500, scale=1.0):
         """
         gamma: first level concentration
         alpha: second level concentration
@@ -78,24 +72,18 @@ class online_hdp:
 
         self.m_varphi_ss = np.zeros(T)
 
-        ## start
+        ## for gaussina
         self.m_dim = dim # the vector dimension
-        self.m_means = np.random.uniform(0.000001, 10, (self.m_T - 1, self.m_dim))
+        self.m_means = np.random.uniform(0.01, 1.0, (self.m_T - 1, self.m_dim))
+        ## the following 2 is for precision
         self.m_dof = np.ones(self.m_T - 1)
         self.m_scale = np.ones(self.m_T - 1)
-        self.m_precs = np.ones((self.m_T, self.m_dim))
-        self.bound_prec = 0.5 * self.m_T * (digamma(self.m_dof) - np.log(self.m_scale))
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
         self.m_scale = scale
         self.m_updatect = 0 
-        self.m_status_up_to_date = True
-        self.m_adding_noise = adding_noise
         self.m_num_docs_parsed = 0
-
-        # Timestamps and normalizers for lazy updates
-        self.m_r = [0]
 
     def new_init(self, c):
         """ need implement"""
@@ -103,8 +91,8 @@ class online_hdp:
             n_clusters=self.n_components,
             random_state=self.random_state).fit(X).cluster_centers_[::-1]
 
-    def process_documents(self, docs, var_converge, unseen_ids=[], ropt_o=True):
-        ss = suff_stats(self.m_T, Wt, len(docs)) 
+    def process_documents(self, cops, var_converge):
+        ss = suff_stats(self.m_T, Wt, len(cops)) 
         Elogsticks_1st = expect_log_sticks(self.m_var_sticks) # global sticks
 
         # run variational inference on some new docs
@@ -216,13 +204,11 @@ class online_hdp:
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
         ss.m_var_beta_ss[:, batchids] += np.dot(var_phi.T, phi.T * doc.counts)
         z = np.dot(var_phi, phi)
-        ss.m_var_mean_1 = np.dot(z.T, cop)
         prs = (self.m_dof * self.m_scale)[:, np.newaxis]
-        ss.m_var_mean_1 *= prs
-        ss.m_var_mean_2 = np.sum(z * prs, axis = 0)
+        ss.m_var_mean_ss += np.dot(z.T, cop - self.m_means) * prs
 
-        ss.m_var_prec_1 = np.sum(z, axis = 0)
-        ss.m_var_prec_2 = np.sum(z * diff2, axis = 0)
+        ss.m_var_prec_1 += np.sum(z, axis = 0)
+        ss.m_var_prec_2 += np.sum(z * diff2, axis = 0)
 
         return(likelihood)
 
@@ -236,14 +222,12 @@ class online_hdp:
         self.m_rhot = rhot
 
         self.m_updatect += 1
-        self.m_r.append(self.m_r[-1] + np.log(1-rhot))
 
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * self.m_D / sstats.m_batchsize
 
-        means = sstats.m_var_mean_1 / (sstats.m_var_mean_2 + 1)[:,np.newaxis]
         self.m_means = (1 - rhot) * self.m_means \
-            + rhot * self.m_D * means / sstats.m_batchsize
+            + rhot * self.m_D * sstats.m_var_mean_ss / sstats.m_batchsize
 
         dof = 1 + self.m_T * ss.m_var_prec_1
         scale = 1 + 0.5 * (ss.m_var_prec_2 + ss.m_var_prec_1 * self.m_T)
