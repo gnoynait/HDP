@@ -35,7 +35,6 @@ def expect_log_sticks(sticks):
     Elogsticks[1:] = Elogsticks[1:] + np.cumsum(Elog1_W)
     return Elogsticks 
 
-
 class suff_stats:
     def __init__(self, T, Wt, Dt):
         self.m_batchsize = Dt
@@ -54,7 +53,7 @@ class suff_stats:
 
 class online_hdp:
     ''' hdp model using stick breaking'''
-    def __init__(self, T, K, D, W, eta, alpha, gamma, kappa, tau, dim = 500, scale=1.0, adding_noise=False):
+    def __init__(self, T, K, D, alpha, gamma, kappa, tau, dim = 500, scale=1.0, adding_noise=False):
         """
         gamma: first level concentration
         alpha: second level concentration
@@ -64,8 +63,7 @@ class online_hdp:
         kappa: learning rate
         tau: slow down parameter
         """
-
-        self.m_D = D # number of doc
+        self.m_D = D # number of corps
         self.m_T = T # Top level truncation
         self.m_K = K # second level truncation
         self.m_alpha = alpha # second level concentration
@@ -105,12 +103,8 @@ class online_hdp:
             n_clusters=self.n_components,
             random_state=self.random_state).fit(X).cluster_centers_[::-1]
 
-
     def process_documents(self, docs, var_converge, unseen_ids=[], ropt_o=True):
-
-
         ss = suff_stats(self.m_T, Wt, len(docs)) 
-
         Elogsticks_1st = expect_log_sticks(self.m_var_sticks) # global sticks
 
         # run variational inference on some new docs
@@ -118,7 +112,6 @@ class online_hdp:
         count = 0
         unseen_score = 0.0
         unseen_count = 0
-
         for i, cop in enumerate(cops):
             cop_score = self.doc_e_step(cop, ss, Elogsticks_1st, var_converge)
 
@@ -130,7 +123,7 @@ class online_hdp:
                    word_list, unique_words, var_converge, \
                    max_iter=100):
         """
-        e step for a single doc
+        e step for a single corps
         """
 
         ## Elogbeta_doc = self.m_Elogbeta[:, doc.words] 
@@ -234,7 +227,6 @@ class online_hdp:
         return(likelihood)
 
     def update_model(self, sstats):
-        
         self.m_status_up_to_date = False
         # rhot will be between 0 and 1, and says how much to weight
         # the information we got from this mini-batch.
@@ -266,6 +258,7 @@ class online_hdp:
         self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
         var_phi_sum = np.flipud(self.m_varphi_ss[1:])
         self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
+
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,
                 'means': self.m_means,

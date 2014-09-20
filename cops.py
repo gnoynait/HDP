@@ -82,5 +82,3 @@ def run_hdp():
         hdp.process_documents(batch)
     hdp.save_model()
 
-
-    
