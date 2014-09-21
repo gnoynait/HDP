@@ -7,7 +7,6 @@ from itertools import izip
 import random
 import cPickle
 from sklearn import cluster
-
 from scipy.special import digamma as _digamma, gammaln as _gammaln
 
 meanchangethresh = 0.00001
@@ -18,6 +17,11 @@ min_adding_noise_point = 10
 min_adding_noise_ratio = 1 
 mu0 = 0.3
 rhot_bound = 0.0
+
+def debug(*W):
+    for w in W:
+        print w
+    print '--------------------------------------------------------------'
 
 def log_normalize(v):
     ''' return log(sum(exp(v)))'''
@@ -115,15 +119,13 @@ class online_hdp:
 
         # run variational inference on some new docs
         score = 0.0
-        count = 0
-        unseen_score = 0.0
-        unseen_count = 0
         for i, cop in enumerate(cops):
             cop_score = self.doc_e_step(cop, ss, Elogsticks_1st, var_converge)
+            score += cop_score
 
         self.update_model(ss)
     
-        return (score, count, unseen_score, unseen_count) 
+        return score
 
     def doc_e_step(self, X, ss, Elogsticks_1st, var_converge, max_iter=100):
         """
@@ -202,6 +204,8 @@ class online_hdp:
             # X part, the data part
             likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
 
+            debug(likelihood, old_likelihood)
+
             converge = (likelihood - old_likelihood)/abs(old_likelihood)
             old_likelihood = likelihood
 
@@ -210,6 +214,8 @@ class online_hdp:
             
             iter += 1
             
+
+        debug(iter)
         # update the suff_stat ss 
         # this time it only contains information from one doc
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
@@ -221,12 +227,17 @@ class online_hdp:
         ss.m_var_prec_a += np.sum(z, axis = 0)
         ss.m_var_prec_b += np.sum(z * (diff2 + self.m_dim), axis = 0)
 
-        return(likelihood)
+        return likelihood
 
     def square_diff(self, X):
         ## return each the square of the distance bettween x and every mean
         diff2 = np.ones((X.shape[0], self.m_T))
         for s in range(X.shape[0]):
+            #diff = X[s] - self.m_means
+            #try:
+            #    diff_ = diff * diff
+            #except:
+            #    print diff
             diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
         return diff2
 
@@ -239,11 +250,11 @@ class online_hdp:
         Eloggauss -= (diff2 + self.m_dim) * (0.5 * self.m_dof / self.m_scale)
         Eloggauss += self.m_dim * 0.5 * (digamma(self.m_dof) - np.log(self.m_scale))
         ## TODO: do we need to plus log(2 * pi * e) ??
-        Eloggauss -= 0.5 * self.m_dim * np.log(2 * np.pi)# + np.log(2 * np.pi * np.e)
+        Eloggauss -= 0.5 * self.m_dim * np.log(2 * np.pi) + np.log(2 * np.pi * np.e)
         return Eloggauss
 
     def update_model(self, sstats):
-        print self.m_updatect
+        #debug(self.m_updatect)
         # rhot will be between 0 and 1, and says how much to weight
         # the information we got from this mini-batch.
         rhot = pow(self.m_tau + self.m_updatect, -self.m_kappa)
@@ -258,6 +269,7 @@ class online_hdp:
 
         self.m_means = (1 - rhot) * self.m_means \
             + rhot * self.m_D * sstats.m_var_mean_ss / sstats.m_batchsize
+        #debug(rhot, self.m_means)
 
         self.m_dof = 1 + 0.5 * self.m_dim * sstats.m_var_prec_a
         self.m_scale = 1 + 0.5 * (sstats.m_var_prec_b)

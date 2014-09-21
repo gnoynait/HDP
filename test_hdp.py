@@ -30,13 +30,14 @@ def gen_cops(means, precis, batch_size, cop_size):
 def test_hdp():
     T = 20
     K = 10
-    D = 100
+    D = 50 
     alpha = 0.5
     gamma = 1
     kappa = 0.7
     tau = 5
     dim = 2
     hdp = onlinehdpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, dim)
+    var_converge = 0.00001
 
     cop_size = 1000
     batch_size = 10
@@ -45,7 +46,10 @@ def test_hdp():
     #hdp.new_init(data)
     for i in range(D):
         data = gen_cops(means, precis, batch_size, cop_size) 
-        hdp.process_documents(data, 0.005)
+        hdp.process_documents(data, var_converge)
+    model = open('model.dat', 'w')
+    hdp.save_model(model)
+    model.close()
 
 def test():
     means, precis = gen_parameter(2, 10)
