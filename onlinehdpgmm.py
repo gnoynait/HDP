@@ -65,6 +65,7 @@ class suff_stats:
         self.m_batchsize = size
         self.m_var_sticks_ss = np.zeros(T) 
         self.m_var_mean_ss = np.zeros((T, dim))
+        self.m_var_mean_pp = np.zeros(T)
         self.m_var_prec_a = np.zeros(T)
         self.m_var_prec_b = np.zeros(T)
 
@@ -97,7 +98,8 @@ class online_hdp:
 
         ## for gaussina
         self.m_dim = dim # the vector dimension
-        self.m_means = np.random.uniform(0.01, 1.0, (self.m_T, self.m_dim))
+        self.m_means = np.random.uniform(0.01, 0.5, (self.m_T, self.m_dim))
+        self.m_means_prec = np.ones(self.m_T)
         ## the following 2 is for precision
         self.m_dof = np.ones(self.m_T)
         self.m_scale = np.ones(self.m_T)
@@ -160,7 +162,7 @@ class online_hdp:
         while iter < max_iter and (converge < 0.0 or converge > var_converge):
             ### update variational parameters
             # var_phi 
-            if iter < 3:
+            if iter < 2:
                 var_phi = np.dot(phi.T, Eloggauss)
                 (log_var_phi, log_norm) = log_normalize(var_phi)
                 var_phi = np.exp(log_var_phi)
@@ -170,7 +172,7 @@ class online_hdp:
                 var_phi = np.exp(log_var_phi)
             
             # phi
-            if iter < 3:
+            if iter < 2:
                 phi = np.dot(Eloggauss, var_phi.T)
                 (log_phi, log_norm) = log_normalize(phi)
                 phi = np.exp(log_phi)
@@ -204,7 +206,7 @@ class online_hdp:
             # X part, the data part
             likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
 
-            debug(likelihood, old_likelihood)
+            #debug(likelihood, old_likelihood)
 
             converge = (likelihood - old_likelihood)/abs(old_likelihood)
             old_likelihood = likelihood
@@ -214,15 +216,16 @@ class online_hdp:
             
             iter += 1
             
-
-        debug(iter)
+        #debug(iter)
         # update the suff_stat ss 
         # this time it only contains information from one doc
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
         z = np.dot(phi, var_phi) 
         prs = (self.m_dof / self.m_scale)[:, np.newaxis]
+        #debug(prs)
         for k in range(self.m_K):
-            ss.m_var_mean_ss[k] += np.sum((X - self.m_means[k]) * prs[k], axis = 0)
+            ss.m_var_mean_ss[k] += np.sum((X - self.m_means[k]) * prs[k] * z[:, k][:,np.newaxis], axis = 0) 
+            ss.m_var_mean_pp[k] += np.sum(z[:,k])
 
         ss.m_var_prec_a += np.sum(z, axis = 0)
         ss.m_var_prec_b += np.sum(z * (diff2 + self.m_dim), axis = 0)
@@ -267,9 +270,10 @@ class online_hdp:
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * self.m_D / sstats.m_batchsize
 
-        self.m_means = (1 - rhot) * self.m_means \
-            + rhot * self.m_D * sstats.m_var_mean_ss / sstats.m_batchsize
-        #debug(rhot, self.m_means)
+        #self.m_means = self.m_means + rhot * self.m_D * sstats.m_var_mean_ss / sstats.m_batchsize
+        self.m_means = (self.m_means * self.m_means_prec[:,np.newaxis] + sstats.m_var_mean_ss) / (self.m_means_prec + sstats.m_var_mean_pp)[:, np.newaxis]
+        self.m_means_prec += sstats.m_var_mean_pp
+        debug(rhot, self.m_means)
 
         self.m_dof = 1 + 0.5 * self.m_dim * sstats.m_var_prec_a
         self.m_scale = 1 + 0.5 * (sstats.m_var_prec_b)

@@ -28,11 +28,12 @@ def gen_cops(means, precis, batch_size, cop_size):
     return cops
 
 def test_hdp():
-    T = 20
+    T = 10
     K = 10
+    topics = 6 
     D = 50 
-    alpha = 0.5
-    gamma = 1
+    alpha = 10 
+    gamma = 20
     kappa = 0.7
     tau = 5
     dim = 2
@@ -41,7 +42,7 @@ def test_hdp():
 
     cop_size = 1000
     batch_size = 10
-    means, precis = gen_parameter(dim, 10)
+    means, precis = gen_parameter(dim, topics)
     #data = gen_data(means, precis, cop_size * 10)
     #hdp.new_init(data)
     for i in range(D):
