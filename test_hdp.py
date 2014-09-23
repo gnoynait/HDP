@@ -8,7 +8,8 @@ from numpy.random import multinomial
 import onlinehdpgmm
 def gen_parameter(dim, k):
     means = normal(np.zeros(dim), np.diag(np.ones(dim)), k)
-    precis = gamma(1, 1, k)
+    #precis = gamma(1, 1, k)
+    precis = np.ones(k)
     return 10 * means, precis
 
 def gen_data(means, precis, n):
@@ -32,8 +33,8 @@ def test_hdp():
     K = 10
     topics = 6 
     D = 50 
-    alpha = 10 
-    gamma = 20
+    alpha = 100 
+    gamma = 200
     kappa = 0.7
     tau = 5
     dim = 2

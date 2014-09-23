@@ -101,8 +101,8 @@ class online_hdp:
         self.m_means = np.random.uniform(0.01, 0.5, (self.m_T, self.m_dim))
         self.m_means_prec = np.ones(self.m_T)
         ## the following 2 is for precision
-        self.m_dof = np.ones(self.m_T)
-        self.m_scale = np.ones(self.m_T)
+        self.m_dof = np.ones(self.m_T) * 100
+        self.m_scale = np.ones(self.m_T) * 100
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
@@ -159,10 +159,10 @@ class online_hdp:
         #Eloggauss:P(X|topic k), shape: sample, topic
         Eloggauss = self.E_log_gauss_diff2(diff2)
 
-        while iter < max_iter and (converge < 0.0 or converge > var_converge):
+        while iter < max_iter and (converge <= 0.0 or converge > var_converge):
             ### update variational parameters
             # var_phi 
-            if iter < 2:
+            if iter < 3:
                 var_phi = np.dot(phi.T, Eloggauss)
                 (log_var_phi, log_norm) = log_normalize(var_phi)
                 var_phi = np.exp(log_var_phi)
@@ -172,7 +172,7 @@ class online_hdp:
                 var_phi = np.exp(log_var_phi)
             
             # phi
-            if iter < 2:
+            if iter < 3:
                 phi = np.dot(Eloggauss, var_phi.T)
                 (log_phi, log_norm) = log_normalize(phi)
                 phi = np.exp(log_phi)
@@ -216,7 +216,7 @@ class online_hdp:
             
             iter += 1
             
-        #debug(iter)
+        #debug(iter, converge)
         # update the suff_stat ss 
         # this time it only contains information from one doc
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
@@ -273,16 +273,18 @@ class online_hdp:
         #self.m_means = self.m_means + rhot * self.m_D * sstats.m_var_mean_ss / sstats.m_batchsize
         self.m_means = (self.m_means * self.m_means_prec[:,np.newaxis] + sstats.m_var_mean_ss) / (self.m_means_prec + sstats.m_var_mean_pp)[:, np.newaxis]
         self.m_means_prec += sstats.m_var_mean_pp
-        debug(rhot, self.m_means)
+        #debug(rhot, self.m_means)
 
-        self.m_dof = 1 + 0.5 * self.m_dim * sstats.m_var_prec_a
-        self.m_scale = 1 + 0.5 * (sstats.m_var_prec_b)
+		# now fix precis
+        #self.m_dof = 1 + 0.5 * self.m_dim * sstats.m_var_prec_a
+        #self.m_scale = 1 + 0.5 * (sstats.m_var_prec_b)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
         self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
         var_phi_sum = np.flipud(self.m_varphi_ss[1:])
         self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
+        debug(np.exp(expect_log_sticks(self.m_var_sticks)))
 
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,
