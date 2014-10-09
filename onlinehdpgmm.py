@@ -64,14 +64,13 @@ class suff_stats:
     def __init__(self, T, dim, size):
         self.m_batchsize = size
         self.m_var_sticks_ss = np.zeros(T) 
-        self.m_var_mean_ss = np.zeros((T, dim))
-        self.m_var_mean_pp = np.zeros(T)
-        self.m_var_prec_a = np.zeros(T)
-        self.m_var_prec_b = np.zeros(T)
+        self.m_var_x = np.zeros(T, dim)
+        self.m_var_x2 = np.zeros((T, dim, dim))
+        self.m_var_res = np.zeros(T)
 
 class online_hdp:
     ''' hdp model using stick breaking'''
-    def __init__(self, T, K, D, alpha, gamma, kappa, tau, dim = 500 ):
+    def __init__(self, T, K, D, alpha, gamma, kappa, tau, total, dim = 500 ):
         """
         gamma: first level concentration
         alpha: second level concentration
@@ -86,6 +85,7 @@ class online_hdp:
         self.m_K = K # second level truncation
         self.m_alpha = alpha # second level concentration
         self.m_gamma = gamma # first level truncation
+        self.m_total = total
 
         ## each column is the top level topic's beta distribution para
         self.m_var_sticks = np.zeros((2, T-1))
@@ -96,13 +96,23 @@ class online_hdp:
 
         self.m_varphi_ss = np.zeros(T)
 
-        ## for gaussina
+
+        ## the prior of each gaussian
+        self.m_means0 = np.zeros(self.m_dim)
+        self.m_precis0 = np.eye(self.m_dim)
+        self.m_rel0 = 0.1
+        ## for gaussian
         self.m_dim = dim # the vector dimension
+        ## TODO random init these para
         self.m_means = np.random.uniform(0.01, 0.5, (self.m_T, self.m_dim))
-        self.m_means_prec = np.ones(self.m_T)
-        ## the following 2 is for precision
-        self.m_dof = np.ones(self.m_T) * 100
-        self.m_scale = np.ones(self.m_T) * 100
+        self.m_preics = np.zeros((self.m_T, self.m_dim, self.m_dim))
+        self.m_precis = np.tile(self.m_precis0, (self.m_dim, 1, 1))
+        self.m_rel = np.zero(self.m_T)
+
+        ## the prior of each gaussian
+        self.m_means0 = np.zeros(self.m_dim)
+        self.m_precis0 = np.eye(self.m_dim)
+        self.m_rel0 = 0.1
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
@@ -221,15 +231,15 @@ class online_hdp:
         # this time it only contains information from one doc
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
         z = np.dot(phi, var_phi) 
-        prs = (self.m_dof / self.m_scale)[:, np.newaxis]
-        #debug(prs)
+        ss.m_var_res += np.sum(z, axis = 0)
+        x2 = np.zeros((self.m_T, self.dim, self.dim))
+        for n in range(X.shape[0]):
+            x2[n,:,:] = np.dot(X[n][:, np.newaixs], X[n][np.newaxis,:])
         for k in range(self.m_K):
-            ss.m_var_mean_ss[k] += np.sum((X - self.m_means[k]) * prs[k] * z[:, k][:,np.newaxis], axis = 0) 
-            ss.m_var_mean_pp[k] += np.sum(z[:,k])
-
-        ss.m_var_prec_a += np.sum(z, axis = 0)
-        ss.m_var_prec_b += np.sum(z * (diff2 + self.m_dim), axis = 0)
-
+            ss.m_var_x[k] += np.sum(X * z[:, k][:,np.newaxis], axis = 0) 
+            scale = np.repeat(z[:, k][:,np.newaxis], self.m_dim, axis = 0)
+            scale = np.repeat(scale, self.m_dim, axis = 1)
+            ss.m_var_x2[k] += np.sum(x2 * scale, axis = 0)
         return likelihood
 
     def square_diff(self, X):
@@ -270,14 +280,11 @@ class online_hdp:
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * self.m_D / sstats.m_batchsize
 
-        #self.m_means = self.m_means + rhot * self.m_D * sstats.m_var_mean_ss / sstats.m_batchsize
-        self.m_means = (self.m_means * self.m_means_prec[:,np.newaxis] + sstats.m_var_mean_ss) / (self.m_means_prec + sstats.m_var_mean_pp)[:, np.newaxis]
-        self.m_means_prec += sstats.m_var_mean_pp
         #debug(rhot, self.m_means)
-
-		# now fix precis
-        #self.m_dof = 1 + 0.5 * self.m_dim * sstats.m_var_prec_a
-        #self.m_scale = 1 + 0.5 * (sstats.m_var_prec_b)
+        scale = self.m_total / sstats.m_batchsize
+        self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
+        self.m_var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_means0 + scale * sstats.m_var_x)
+        self.m_var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_precis0 + scale * sstats.m_var_x2)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
