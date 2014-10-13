@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.special as sp
+from scipy import linalg
 import os, sys, math, time
 import utils
 from corpus import document, corpus
@@ -95,7 +96,6 @@ class online_hdp:
         #self.m_var_sticks[1] = range(T-1, 0, -1)
 
         self.m_varphi_ss = np.zeros(T)
-
 
         ## the prior of each gaussian
         self.m_means0 = np.zeros(self.m_dim)
@@ -244,14 +244,10 @@ class online_hdp:
 
     def square_diff(self, X):
         ## return each the square of the distance bettween x and every mean
-        diff2 = np.ones((X.shape[0], self.m_T))
-        for s in range(X.shape[0]):
-            #diff = X[s] - self.m_means
-            #try:
-            #    diff_ = diff * diff
-            #except:
-            #    print diff
-            diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
+        diff2 = np.zeros((X.shape[0], self.m_T))
+        diff = X - self.m_means
+        for t in range(self.m_T):
+            diff2[:,t] = np.sum(np.dot(diff,self.m_preics[t]) * diff, axis = 1)
         return diff2
 
     def E_log_gauss(self, X):
@@ -259,11 +255,17 @@ class online_hdp:
         return self.E_log_guass_diff2(diff2)
 
     def E_log_gauss_diff2(self, diff2):
+        ## approximate
+        ## TODO implement exact computation
+        return log_gauss_diff2(diff2)
+
+    def log_gauss_diff2(self, diff2):
+        const = np.ones(self.m_T) * (-0.5 * self.m_D * np.log(2 * np.pi))
+        for t in range(self.m_T):
+            const[t] += 0.5 * np.log(linalg.det(self.m_preics[t]))
         Eloggauss = np.zeros((diff2.shape[0], self.m_T))
-        Eloggauss -= (diff2 + self.m_dim) * (0.5 * self.m_dof / self.m_scale)
-        Eloggauss += self.m_dim * 0.5 * (digamma(self.m_dof) - np.log(self.m_scale))
-        ## TODO: do we need to plus log(2 * pi * e) ??
-        Eloggauss -= 0.5 * self.m_dim * np.log(2 * np.pi) + np.log(2 * np.pi * np.e)
+        Eloggauss -= 0.5 * diff2
+        Elogguass -= const
         return Eloggauss
 
     def update_model(self, sstats):
@@ -285,6 +287,10 @@ class online_hdp:
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
         self.m_var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_means0 + scale * sstats.m_var_x)
         self.m_var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_precis0 + scale * sstats.m_var_x2)
+        self.m_means = self.m_var_x / self.m_rel[:, np.newaxis]
+        for t in range(self.m_T):
+            self.m_preics[t] = self.m_var_x2 / self.m_rel[t] - 
+                np.dot(self.m_means[:, np.newaxis], self.m_means)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
