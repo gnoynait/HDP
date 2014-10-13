@@ -4,8 +4,8 @@ from numpy.random import multivariate_normal as normal
 from numpy.random import gamma
 from numpy.random import dirichlet
 from numpy.random import multinomial
-
 import onlinehdpgmm
+
 def gen_parameter(dim, k):
     means = normal(np.zeros(dim), np.diag(np.ones(dim)), k)
     #precis = gamma(1, 1, k)
@@ -20,7 +20,9 @@ def gen_data(means, precis, n):
     for i in range(len(count)):
         data[start: start + count[i], :] = normal(means[i], np.diag(precis[i] * np.ones(means.shape[1])), count[i])
         start = start + count[i]
-    return data
+    s = np.arange(n)
+    np.random.shuffle(s)
+    return data[s]
 
 def gen_cops(means, precis, batch_size, cop_size):
     cops = []
@@ -33,12 +35,13 @@ def test_hdp():
     K = 10
     topics = 6 
     D = 50 
-    alpha = 100 
-    gamma = 200
+    alpha = 10 
+    gamma = 10
     kappa = 0.7
     tau = 5
     dim = 2
-    hdp = onlinehdpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, dim)
+    total = 500
+    hdp = onlinehdpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim)
     var_converge = 0.00001
 
     cop_size = 1000
@@ -52,10 +55,11 @@ def test_hdp():
     model = open('model.dat', 'w')
     hdp.save_model(model)
     model.close()
-
+"""
 def test():
     means, precis = gen_parameter(2, 10)
     data = gen_data(means, precis, 1000) 
     return data
+"""
 
 test_hdp()

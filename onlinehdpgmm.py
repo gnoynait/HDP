@@ -65,8 +65,8 @@ class suff_stats:
     def __init__(self, T, dim, size):
         self.m_batchsize = size
         self.m_var_sticks_ss = np.zeros(T) 
-        self.m_var_x = np.zeros(T, dim)
-        self.m_var_x2 = np.zeros((T, dim, dim))
+        self.m_var_x = np.zeros((T, dim))
+        self.m_var_x2 = np.zeros((T, dim * dim))
         self.m_var_res = np.zeros(T)
 
 class online_hdp:
@@ -81,7 +81,6 @@ class online_hdp:
         kappa: learning rate
         tau: slow down parameter
         """
-        self.m_D = D # number of corps
         self.m_T = T # Top level truncation
         self.m_K = K # second level truncation
         self.m_alpha = alpha # second level concentration
@@ -97,22 +96,18 @@ class online_hdp:
 
         self.m_varphi_ss = np.zeros(T)
 
+        self.m_dim = dim # the vector dimension
         ## the prior of each gaussian
         self.m_means0 = np.zeros(self.m_dim)
         self.m_precis0 = np.eye(self.m_dim)
         self.m_rel0 = 0.1
         ## for gaussian
-        self.m_dim = dim # the vector dimension
         ## TODO random init these para
         self.m_means = np.random.uniform(0.01, 0.5, (self.m_T, self.m_dim))
-        self.m_preics = np.zeros((self.m_T, self.m_dim, self.m_dim))
-        self.m_precis = np.tile(self.m_precis0, (self.m_dim, 1, 1))
-        self.m_rel = np.zero(self.m_T)
-
-        ## the prior of each gaussian
-        self.m_means0 = np.zeros(self.m_dim)
-        self.m_precis0 = np.eye(self.m_dim)
-        self.m_rel0 = 0.1
+        self.m_precis = np.tile(self.m_precis0, (self.m_T, 1, 1))
+        self.m_rel = np.ones(self.m_T) * self.m_rel0
+        self.m_var_x = self.m_means * self.m_rel[:, np.newaxis]
+        self.m_var_x2 = self.m_precis * self.m_rel0
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
@@ -232,22 +227,21 @@ class online_hdp:
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
         z = np.dot(phi, var_phi) 
         ss.m_var_res += np.sum(z, axis = 0)
-        x2 = np.zeros((self.m_T, self.dim, self.dim))
+        x2 = np.zeros((X.shape[0], self.m_dim, self.m_dim))
         for n in range(X.shape[0]):
-            x2[n,:,:] = np.dot(X[n][:, np.newaixs], X[n][np.newaxis,:])
-        for k in range(self.m_K):
+            x2[n,:,:] = np.dot(X[n][:, np.newaxis], X[n][np.newaxis,:])
+        for k in range(self.m_T):
             ss.m_var_x[k] += np.sum(X * z[:, k][:,np.newaxis], axis = 0) 
-            scale = np.repeat(z[:, k][:,np.newaxis], self.m_dim, axis = 0)
-            scale = np.repeat(scale, self.m_dim, axis = 1)
-            ss.m_var_x2[k] += np.sum(x2 * scale, axis = 0)
+            t = x2.reshape((x2.shape[0], x2.shape[1] * x2.shape[2]))
+            ss.m_var_x2[k] += np.sum(t * z[:,k][:,np.newaxis], axis = 0)
         return likelihood
 
     def square_diff(self, X):
         ## return each the square of the distance bettween x and every mean
         diff2 = np.zeros((X.shape[0], self.m_T))
-        diff = X - self.m_means
         for t in range(self.m_T):
-            diff2[:,t] = np.sum(np.dot(diff,self.m_preics[t]) * diff, axis = 1)
+            diff = X - self.m_means[t]
+            diff2[:,t] = np.sum(np.dot(diff,self.m_precis[t]) * diff, axis = 1)
         return diff2
 
     def E_log_gauss(self, X):
@@ -257,15 +251,15 @@ class online_hdp:
     def E_log_gauss_diff2(self, diff2):
         ## approximate
         ## TODO implement exact computation
-        return log_gauss_diff2(diff2)
+        return self.log_gauss_diff2(diff2)
 
     def log_gauss_diff2(self, diff2):
-        const = np.ones(self.m_T) * (-0.5 * self.m_D * np.log(2 * np.pi))
+        const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
         for t in range(self.m_T):
-            const[t] += 0.5 * np.log(linalg.det(self.m_preics[t]))
+            const[t] += 0.5 * np.log(linalg.det(self.m_precis[t]))
         Eloggauss = np.zeros((diff2.shape[0], self.m_T))
         Eloggauss -= 0.5 * diff2
-        Elogguass -= const
+        Eloggauss -= const
         return Eloggauss
 
     def update_model(self, sstats):
@@ -280,17 +274,17 @@ class online_hdp:
         self.m_updatect += 1
 
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
-               sstats.m_var_sticks_ss * self.m_D / sstats.m_batchsize
+               sstats.m_var_sticks_ss * self.m_dim / sstats.m_batchsize
 
         #debug(rhot, self.m_means)
         scale = self.m_total / sstats.m_batchsize
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
         self.m_var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_means0 + scale * sstats.m_var_x)
-        self.m_var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_precis0 + scale * sstats.m_var_x2)
+        self.m_var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_precis0 + scale * sstats.m_var_x2.reshape((-1, self.m_dim, self.m_dim)))
         self.m_means = self.m_var_x / self.m_rel[:, np.newaxis]
         for t in range(self.m_T):
-            self.m_preics[t] = self.m_var_x2 / self.m_rel[t] - 
-                np.dot(self.m_means[:, np.newaxis], self.m_means)
+            self.m_precis[t] = self.m_var_x2[t] / self.m_rel[t] - \
+                np.dot(self.m_means[t][:, np.newaxis], self.m_means[t][np.newaxis,:])
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
@@ -302,7 +296,5 @@ class online_hdp:
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,
                 'means': self.m_means,
-                'dof':self.m_dof,
-                'scale':self.m_scale}
-        
+                'precis':self.m_precis}
         cPickle.dump(model, output)
