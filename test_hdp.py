@@ -6,11 +6,17 @@ from numpy.random import dirichlet
 from numpy.random import multinomial
 import onlinehdpgmm
 
+import time
+
+meanchangethresh = 0.00001
+#random_seed = 999931111
+random_seed = int(time.time())
+np.random.seed(random_seed)
 def gen_parameter(dim, k):
-    means = normal(np.zeros(dim), np.diag(np.ones(dim)), k)
+    means = normal(np.zeros(dim), np.diag(np.ones(dim) * 0.1), k)
     #precis = gamma(1, 1, k)
-    precis = np.ones(k)
-    return 10 * means, precis
+    precis = np.ones(k) * 0.01
+    return means, precis
 
 def gen_data(means, precis, n):
     weight = dirichlet(np.ones(means.shape[0]))
@@ -33,27 +39,27 @@ def gen_cops(means, precis, batch_size, cop_size):
 def test_hdp():
     T = 10
     K = 10
-    topics = 6 
-    D = 100 
-    alpha = 10 
-    gamma = 10
-    kappa = 0.7
+    topics = 3 
+    D = 500 
+    alpha = 1 
+    gamma = 1 
+    kappa = 0.55
     tau = 1
     dim = 2
-    total = 5000
+    total = 500000
     hdp = onlinehdpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim)
     init_means = hdp.m_means
     plt.scatter(init_means[:, 0], init_means[:, 1], c = 'y')
     var_converge = 0.00001
 
     cop_size = 1000
-    batch_size = 10
+    batch_size = 1
     means, precis = gen_parameter(dim, topics)
-    #data = gen_data(means, precis, cop_size * 10)
+    data = gen_data(means, precis, cop_size * 10)
+    plt.scatter(data[:, 0], data[:, 1], marker = '.')
     #hdp.new_init(data)
     for i in range(D):
         data = gen_cops(means, precis, batch_size, cop_size) 
-        #plt.scatter(data[0][:, 0], data[0][:, 1], marker = '.')
         hdp.process_documents(data, var_converge)
     model = open('model.dat', 'w')
     infer_means = hdp.m_means
@@ -62,6 +68,7 @@ def test_hdp():
     plt.show()
     hdp.save_model(model)
     model.close()
+    print hdp.m_precis
 """
 def test():
     means, precis = gen_parameter(2, 10)

@@ -9,9 +9,11 @@ import random
 import cPickle
 from sklearn import cluster
 from scipy.special import digamma as _digamma, gammaln as _gammaln
+import time
 
 meanchangethresh = 0.00001
-random_seed = 999931111
+#random_seed = 999931111
+random_seed = int(time.time())
 np.random.seed(random_seed)
 random.seed(random_seed)
 min_adding_noise_point = 10
@@ -71,7 +73,7 @@ class suff_stats:
 
 class online_hdp:
     ''' hdp model using stick breaking'''
-    def __init__(self, T, K, D, alpha, gamma, kappa, tau, total, dim = 500 ):
+    def __init__(self, T, K, D, alpha, gamma, kappa, tau, total, dim = 500):
         """
         gamma: first level concentration
         alpha: second level concentration
@@ -99,11 +101,12 @@ class online_hdp:
         self.m_dim = dim # the vector dimension
         ## the prior of each gaussian
         self.m_means0 = np.zeros(self.m_dim)
-        self.m_precis0 = np.eye(self.m_dim)
-        self.m_rel0 = 0.1
+        self.m_precis0 = np.eye(self.m_dim) * 0.1
+        self.m_rel0 = self.m_dim + 1
         ## for gaussian
         ## TODO random init these para
-        self.m_means = np.random.uniform(0.01, 0.5, (self.m_T, self.m_dim))
+        self.m_means = np.random.normal(0, 0.2, (self.m_T, self.m_dim))
+        print self.m_means
         self.m_precis = np.tile(self.m_precis0, (self.m_T, 1, 1))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
         self.m_var_x = self.m_means * self.m_rel[:, np.newaxis]
@@ -164,7 +167,9 @@ class online_hdp:
         #Eloggauss:P(X|topic k), shape: sample, topic
         Eloggauss = self.E_log_gauss_diff2(diff2)
 
-        while iter < max_iter and (converge <= 0.0 or converge > var_converge):
+        #TODO
+        #while iter < max_iter and (converge <= 0.0 or converge > var_converge):
+        while iter < 100:
             ### update variational parameters
             # var_phi 
             if iter < 3:
@@ -221,7 +226,7 @@ class online_hdp:
             
             iter += 1
             
-        #debug(iter, converge)
+        debug(iter, converge)
         # update the suff_stat ss 
         # this time it only contains information from one doc
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
@@ -250,8 +255,26 @@ class online_hdp:
 
     def E_log_gauss_diff2(self, diff2):
         ## approximate
-        ## TODO implement exact computation
-        return self.log_gauss_diff2(diff2)
+        ## _TODO implement exact computation
+        ##return self.log_gauss_diff2(diff2)
+
+
+        const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
+        Elogdetp = np.ones(self.m_T) * (self.m_dim * np.log(2))
+        for t in range(self.m_T):
+            Elogdetp[t] += 0.5 * np.log(linalg.det(self.m_precis[t]/self.m_rel[t]))
+        for d in range(self.m_dim):
+            Elogdetp += digamma((self.m_rel -d) / 2)
+        const += 0.5 * Elogdetp
+
+        Eloggauss = np.zeros((diff2.shape[0], self.m_T))
+        Eloggauss -= 0.5 * diff2
+        Eloggauss -= 0.5 * np.sum(self.m_precis.reshape((self.m_T, -1)), axis=1)
+        Eloggauss -= const
+        return Eloggauss
+
+
+
 
     def log_gauss_diff2(self, diff2):
         const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
