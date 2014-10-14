@@ -276,7 +276,7 @@ class online_hdp:
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * self.m_dim / sstats.m_batchsize
 
-        #debug(rhot, self.m_means)
+        debug(rhot)
         scale = self.m_total / sstats.m_batchsize
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
         self.m_var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_means0 + scale * sstats.m_var_x)

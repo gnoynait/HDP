@@ -34,14 +34,16 @@ def test_hdp():
     T = 10
     K = 10
     topics = 6 
-    D = 50 
+    D = 100 
     alpha = 10 
     gamma = 10
     kappa = 0.7
-    tau = 5
+    tau = 1
     dim = 2
-    total = 500
+    total = 5000
     hdp = onlinehdpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim)
+    init_means = hdp.m_means
+    plt.scatter(init_means[:, 0], init_means[:, 1], c = 'y')
     var_converge = 0.00001
 
     cop_size = 1000
@@ -51,8 +53,13 @@ def test_hdp():
     #hdp.new_init(data)
     for i in range(D):
         data = gen_cops(means, precis, batch_size, cop_size) 
+        #plt.scatter(data[0][:, 0], data[0][:, 1], marker = '.')
         hdp.process_documents(data, var_converge)
     model = open('model.dat', 'w')
+    infer_means = hdp.m_means
+    plt.scatter(means[:,0], means[:,1], c = 'g', marker='>')
+    plt.scatter(infer_means[:, 0], infer_means[:, 1], c = 'r')
+    plt.show()
     hdp.save_model(model)
     model.close()
 """
