@@ -102,15 +102,18 @@ class online_hdp:
         ## the prior of each gaussian
         self.m_means0 = np.zeros(self.m_dim)
         self.m_precis0 = np.eye(self.m_dim) * 0.1
-        self.m_rel0 = self.m_dim + 1
+        self.m_rel0 = self.m_dim + 10
         ## for gaussian
         ## TODO random init these para
         self.m_means = np.random.normal(0, 0.2, (self.m_T, self.m_dim))
-        print self.m_means
         self.m_precis = np.tile(self.m_precis0, (self.m_T, 1, 1))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
         self.m_var_x = self.m_means * self.m_rel[:, np.newaxis]
-        self.m_var_x2 = self.m_precis * self.m_rel0
+
+        self.m_var_x2 = self.m_precis.copy()
+        for t in range(self.m_T):
+        	self.m_var_x2[t] += np.dot(self.m_means[t][:,np.newaxis], self.m_means[t][np.newaxis,:])
+        self.m_var_x2 *= self.m_rel0
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
@@ -119,9 +122,18 @@ class online_hdp:
 
     def new_init(self, c):
         """ need implement"""
+        """
         self.m_means = cluster.KMeans(
             n_clusters=self.m_T,
             random_state=self.random_state).fit(c).cluster_centers_[::-1]
+        """
+        np.random.shuffle(c)
+        self.m_means[:] = c[0:self.m_T]
+
+        self.m_var_x2 = self.m_precis.copy()
+        for t in range(self.m_T):
+        	self.m_var_x2[t] += np.dot(self.m_means[t][:,np.newaxis], self.m_means[t][np.newaxis,:])
+        self.m_var_x2 *= self.m_rel0
 
     def process_documents(self, cops, var_converge):
         ss = suff_stats(self.m_T, self.m_dim, len(cops)) 
@@ -237,7 +249,7 @@ class online_hdp:
             x2[n,:,:] = np.dot(X[n][:, np.newaxis], X[n][np.newaxis,:])
         for k in range(self.m_T):
             ss.m_var_x[k] += np.sum(X * z[:, k][:,np.newaxis], axis = 0) 
-            t = x2.reshape((x2.shape[0], x2.shape[1] * x2.shape[2]))
+            t = x2.reshape((x2.shape[0], -1))
             ss.m_var_x2[k] += np.sum(t * z[:,k][:,np.newaxis], axis = 0)
         return likelihood
 
@@ -272,9 +284,6 @@ class online_hdp:
         Eloggauss -= 0.5 * np.sum(self.m_precis.reshape((self.m_T, -1)), axis=1)
         Eloggauss -= const
         return Eloggauss
-
-
-
 
     def log_gauss_diff2(self, diff2):
         const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
