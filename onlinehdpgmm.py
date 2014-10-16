@@ -103,16 +103,17 @@ class online_hdp:
 
         self.m_dim = dim # the vector dimension
         ## the prior of each gaussian
-        self.m_means0 = np.zeros(self.m_dim)
-        self.m_precis0 = np.eye(self.m_dim)
-        self.m_rel0 = self.m_dim + 10
+        #self.m_means0 = np.zeros(self.m_dim)
+        #self.m_precis0 = np.eye(self.m_dim)
+        self.m_rel0 = self.m_dim + 100
+        self.m_var_x0 = np.zeros(self.m_dim)
+        self.m_var_x20 = np.tile(np.eye(self.m_dim) * self.m_rel0, (self.m_T, 1, 1))
         ## for gaussian
         ## TODO random init these para
         self.m_means = np.random.normal(0, 0.2, (self.m_T, self.m_dim))
-        self.m_precis = np.tile(self.m_precis0, (self.m_T, 1, 1))
+        self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
         self.m_var_x = self.m_means * self.m_rel[:, np.newaxis]
-
         self.m_var_x2 = self.m_precis.copy()
         for t in range(self.m_T):
         	self.m_var_x2[t] += np.dot(self.m_means[t][:,np.newaxis], self.m_means[t][np.newaxis,:])
@@ -127,7 +128,7 @@ class online_hdp:
         mean = x / r[:, np.newaxis]
         x2 = x2 / r[:,np.newaxis, np.newaxis]
         precis = x2 - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
-        return mean, precis
+        return precis, mean
 
     def par_to_natual(self, precis, mean, r):
         x = mean * r[:, np.newaxis]
@@ -337,12 +338,15 @@ class online_hdp:
         #debug(rhot)
         scale = self.m_total / sstats.m_batchsize
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
-        self.m_var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_means0 + scale * sstats.m_var_x)
-        self.m_var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_precis0 + scale * sstats.m_var_x2.reshape((-1, self.m_dim, self.m_dim)))
+        self.m_var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
+        self.m_var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2.reshape((-1, self.m_dim, self.m_dim)))
+        """
         self.m_means = self.m_var_x / self.m_rel[:, np.newaxis]
         for t in range(self.m_T):
             self.m_precis[t] = self.m_var_x2[t] / self.m_rel[t] - \
                 np.dot(self.m_means[t][:, np.newaxis], self.m_means[t][np.newaxis,:])
+        """
+        self.m_precis, self.m_means = self.natual_to_par(self.m_var_x2, self.m_var_x, self.m_rel)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))

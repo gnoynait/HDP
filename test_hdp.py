@@ -38,8 +38,8 @@ def gen_cops(means, precis, batch_size, cop_size):
 
 def test_hdp():
     T = 100
-    K = 20 
-    topics = 3 
+    K = 40 
+    topics = 10
     D = 100
     alpha = 2 
     gamma = 0.1 
@@ -64,7 +64,7 @@ def test_hdp():
         #hdp.process_documents([data], var_converge)
     model = open('model.dat', 'w')
     weight = np.exp(onlinehdpgmm.expect_log_sticks(hdp.m_var_sticks))
-    thresh = 0.05
+    thresh = 0.01
     infer_means = hdp.m_means[weight > thresh]
     plt.scatter(means[:,0], means[:,1], c = 'g', marker='>')
     plt.scatter(infer_means[:, 0], infer_means[:, 1], c = 'r')
