@@ -9,8 +9,8 @@ import onlinehdpgmm
 import time
 
 meanchangethresh = 0.00001
-#random_seed = 999931111
-random_seed = int(time.time())
+random_seed = 999931111
+#random_seed = int(time.time())
 np.random.seed(random_seed)
 def gen_parameter(dim, k):
     means = normal(np.zeros(dim), np.diag(np.ones(dim) * 0.1), k)
@@ -38,11 +38,11 @@ def gen_cops(means, precis, batch_size, cop_size):
 
 def test_hdp():
     T = 10
-    K = 10
+    K = 5 
     topics = 3 
     D = 100
-    alpha = 0.01 
-    gamma = 0.01 
+    alpha = 2 
+    gamma = 0.1 
     kappa = 0.9
     tau = 1
     dim = 2
