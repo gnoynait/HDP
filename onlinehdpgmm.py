@@ -104,7 +104,7 @@ class online_hdp:
         self.m_dim = dim # the vector dimension
         ## the prior of each gaussian
         self.m_means0 = np.zeros(self.m_dim)
-        self.m_precis0 = np.eye(self.m_dim) * 0.01
+        self.m_precis0 = np.eye(self.m_dim)
         self.m_rel0 = self.m_dim + 10
         ## for gaussian
         ## TODO random init these para
@@ -223,7 +223,7 @@ class online_hdp:
             phi_cum = np.flipud(np.sum(phi[:,1:], 0))
             v[1] = self.m_alpha + np.flipud(np.cumsum(phi_cum))
             Elogsticks_2nd = expect_log_sticks(v)
-            debug(np.exp(Elogsticks_2nd))
+            #debug(np.exp(Elogsticks_2nd))
 
             ## TODO: likelihood need complete
             likelihood = 0.0
@@ -261,12 +261,17 @@ class online_hdp:
         z = np.dot(phi, var_phi) 
         ss.m_var_res += np.sum(z, axis = 0)
         x2 = np.zeros((X.shape[0], self.m_dim, self.m_dim))
+        x2 = X[:,:,np.newaxis] * X[:,np.newaxis,:]
+        """
         for n in range(X.shape[0]):
             x2[n,:,:] = np.dot(X[n][:, np.newaxis], X[n][np.newaxis,:])
         for k in range(self.m_T):
             ss.m_var_x[k] += np.sum(X * z[:, k][:,np.newaxis], axis = 0) 
             t = x2.reshape((x2.shape[0], -1))
             ss.m_var_x2[k] += np.sum(t * z[:,k][:,np.newaxis], axis = 0)
+        """
+        ss.m_var_x = np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
+        ss.m_var_x2 = np.sum(x2[:,np.newaxis,:,:] * z[:,:,np.newaxis,np.newaxis], axis = 0) 
         return likelihood
 
     def square_diff(self, X):
@@ -344,7 +349,7 @@ class online_hdp:
         self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
         var_phi_sum = np.flipud(self.m_varphi_ss[1:])
         self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
-        #debug(np.exp(expect_log_sticks(self.m_var_sticks)))
+        debug(np.exp(expect_log_sticks(self.m_var_sticks)))
 
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,

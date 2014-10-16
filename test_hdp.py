@@ -13,9 +13,9 @@ random_seed = 999931111
 #random_seed = int(time.time())
 np.random.seed(random_seed)
 def gen_parameter(dim, k):
-    means = normal(np.zeros(dim), np.diag(np.ones(dim) * 0.1), k)
+    means = normal(np.zeros(dim), np.diag(np.ones(dim) * 10), k)
     #precis = gamma(1, 1, k)
-    precis = np.ones(k) * 0.01
+    precis = np.ones(k)
     return means, precis
 
 def gen_data(means, precis, n):
@@ -37,8 +37,8 @@ def gen_cops(means, precis, batch_size, cop_size):
     return cops
 
 def test_hdp():
-    T = 10
-    K = 5 
+    T = 100
+    K = 20 
     topics = 3 
     D = 100
     alpha = 2 
@@ -63,13 +63,15 @@ def test_hdp():
         hdp.process_documents(data, var_converge)
         #hdp.process_documents([data], var_converge)
     model = open('model.dat', 'w')
-    infer_means = hdp.m_means
+    weight = np.exp(onlinehdpgmm.expect_log_sticks(hdp.m_var_sticks))
+    thresh = 0.05
+    infer_means = hdp.m_means[weight > thresh]
     plt.scatter(means[:,0], means[:,1], c = 'g', marker='>')
     plt.scatter(infer_means[:, 0], infer_means[:, 1], c = 'r')
     plt.show()
+    print hdp.m_precis[weight > thresh]
     hdp.save_model(model)
     model.close()
-    print hdp.m_precis
 """
 def test():
     means, precis = gen_parameter(2, 10)
