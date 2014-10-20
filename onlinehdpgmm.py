@@ -11,20 +11,20 @@ from sklearn import cluster
 from scipy.special import digamma as _digamma, gammaln as _gammaln
 import time
 
-meanchangethresh = 0.00001
+#meanchangethresh = 0.00001
 #random_seed = 999931111
 random_seed = int(time.time())
 np.random.seed(random_seed)
 random.seed(random_seed)
-min_adding_noise_point = 10
-min_adding_noise_ratio = 1 
-mu0 = 0.3
+#min_adding_noise_point = 10
+#min_adding_noise_ratio = 1 
+#mu0 = 0.3
 rhot_bound = 0.0
 
 def debug(*W):
     for w in W:
         print w
-    print '--------------------------------------------------------------'
+    print '-' * 75
 
 def log_normalize(v):
     ''' return log(sum(exp(v)))'''
@@ -63,15 +63,15 @@ def expect_log_sticks(sticks):
     Elogsticks[1:] = Elogsticks[1:] + np.cumsum(Elog1_W)
     return Elogsticks 
 
-
-    
-
 class suff_stats:
     def __init__(self, T, dim, size):
+        # T: top level topic number
+        # dim: dimension
+        # size: batch size
         self.m_batchsize = size
         self.m_var_sticks_ss = np.zeros(T) 
         self.m_var_x = np.zeros((T, dim))
-        self.m_var_x2 = np.zeros((T, dim * dim))
+        self.m_var_x2 = np.zeros((T, dim, dim))
         self.m_var_res = np.zeros(T)
 
 class online_hdp:
@@ -90,7 +90,7 @@ class online_hdp:
         self.m_K = K # second level truncation
         self.m_alpha = alpha # second level concentration
         self.m_gamma = gamma # first level truncation
-        self.m_total = total
+        self.m_total = total # total ponits
 
         ## each column is the top level topic's beta distribution para
         self.m_var_sticks = np.zeros((2, T-1))
@@ -105,7 +105,7 @@ class online_hdp:
         ## the prior of each gaussian
         #self.m_means0 = np.zeros(self.m_dim)
         #self.m_precis0 = np.eye(self.m_dim)
-        self.m_rel0 = self.m_dim + 100
+        self.m_rel0 = self.m_dim + 2 
         self.m_var_x0 = np.zeros(self.m_dim)
         self.m_var_x20 = np.tile(np.eye(self.m_dim) * self.m_rel0, (self.m_T, 1, 1))
         ## for gaussian
@@ -113,16 +113,18 @@ class online_hdp:
         self.m_means = np.random.normal(0, 0.2, (self.m_T, self.m_dim))
         self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
+        self.m_var_x2, self.m_var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
+        """
         self.m_var_x = self.m_means * self.m_rel[:, np.newaxis]
         self.m_var_x2 = self.m_precis.copy()
         for t in range(self.m_T):
         	self.m_var_x2[t] += np.dot(self.m_means[t][:,np.newaxis], self.m_means[t][np.newaxis,:])
         self.m_var_x2 *= self.m_rel0
+        """
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
         self.m_updatect = 0 
-        self.m_num_docs_parsed = 0
 
     def natual_to_par(self, x2, x, r):
         mean = x / r[:, np.newaxis]
@@ -134,7 +136,7 @@ class online_hdp:
         x = mean * r[:, np.newaxis]
         x2 = precis + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]
         x2 = x2 * r[:, np.newaxis, np.newaxis]
-        return x, x2
+        return x2, x
         
     def new_init(self, c):
         """ need implement"""
@@ -145,14 +147,19 @@ class online_hdp:
         """
         np.random.shuffle(c)
         self.m_means[:] = c[0:self.m_T]
-
+        self.m_var_x2, self.m_var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
+        """
         self.m_var_x2 = self.m_precis.copy()
         for t in range(self.m_T):
         	self.m_var_x2[t] += np.dot(self.m_means[t][:,np.newaxis], self.m_means[t][np.newaxis,:])
         self.m_var_x2 *= self.m_rel0
+        """
 
-    def process_documents(self, cops, var_converge):
-        ss = suff_stats(self.m_T, self.m_dim, len(cops)) 
+    def process_documents(self, cops, var_converge = 0.000001):
+        size = 0
+        for c in cops:
+            size += c.shape[0]
+        ss = suff_stats(self.m_T, self.m_dim, size) 
         Elogsticks_1st = expect_log_sticks(self.m_var_sticks) # global sticks
 
         # run variational inference on some new docs
@@ -170,7 +177,6 @@ class online_hdp:
         e step for a single corps
         """
 
-        ## Elogbeta_doc = self.m_Elogbeta[:, doc.words] 
         ## very similar to the hdp equations
         v = np.zeros((2, self.m_K-1))  
         v[0] = 1.0
@@ -180,24 +186,24 @@ class online_hdp:
         Elogsticks_2nd = expect_log_sticks(v)
 
         # back to the uniform
-        phi = np.ones((X.shape[0], self.m_K)) * 1.0/self.m_K
+        phi = np.ones((X.shape[0], self.m_K)) / self.m_K
 
         likelihood = 0.0
         old_likelihood = -1e100
         converge = 1.0 
         eps = 1e-100
-        
         iter = 0
-
+        
         diff2 = self.square_diff(X)
-        for s in range(X.shape[0]):
-            diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
+        # TODO: diff2 is wrong
+        #for s in range(X.shape[0]):
+        #    diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
         #Eloggauss:P(X|topic k), shape: sample, topic
         Eloggauss = self.E_log_gauss_diff2(diff2)
 
         #TODO
         #while iter < max_iter and (converge <= 0.0 or converge > var_converge):
-        while iter < 100:
+        while iter < max_iter:
             ### update variational parameters
             # var_phi 
             if iter < 3:
@@ -257,11 +263,14 @@ class online_hdp:
             
         #debug(iter, converge)
         # update the suff_stat ss 
-        # this time it only contains information from one doc
+        ## TODO right??
         ss.m_var_sticks_ss += np.sum(var_phi, 0)   
+        #debug(phi)
+        #debug(var_phi)
         z = np.dot(phi, var_phi) 
+        #debug(z)
         ss.m_var_res += np.sum(z, axis = 0)
-        x2 = np.zeros((X.shape[0], self.m_dim, self.m_dim))
+        #x2 = np.zeros((X.shape[0], self.m_dim, self.m_dim))
         x2 = X[:,:,np.newaxis] * X[:,np.newaxis,:]
         """
         for n in range(X.shape[0]):
@@ -271,28 +280,45 @@ class online_hdp:
             t = x2.reshape((x2.shape[0], -1))
             ss.m_var_x2[k] += np.sum(t * z[:,k][:,np.newaxis], axis = 0)
         """
-        ss.m_var_x = np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
-        ss.m_var_x2 = np.sum(x2[:,np.newaxis,:,:] * z[:,:,np.newaxis,np.newaxis], axis = 0) 
+        # bug fix: change '=' to '+='
+        ss.m_var_x += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
+        ss.m_var_x2 += np.sum(x2[:,np.newaxis,:,:] * z[:,:,np.newaxis,np.newaxis], axis = 0) 
         return likelihood
+
+    def fit(self, X):
+        self.new_init(X)
+        size = X.shape[0] / 5
+        for i in range(500):
+            np.random.shuffle(X)
+            data = X[:size]
+            self.process_documents([data])
+
+    def predict(self, X):
+        res = self.E_log_gauss(X)
+        return res.argmax(axis=1)
 
     def square_diff(self, X):
         ## return each the square of the distance bettween x and every mean
+        """
         diff2 = np.zeros((X.shape[0], self.m_T))
         for t in range(self.m_T):
             diff = X - self.m_means[t]
             diff2[:,t] = np.sum(np.dot(diff,self.m_precis[t]) * diff, axis = 1)
         return diff2
+        """
+
+        diff = X[:,np.newaxis,:] - self.m_means[np.newaxis,:,:]
+        diff2 = np.sum(diff[:,:,:,np.newaxis] * self.m_precis[np.newaxis,:,:,:] * diff[:,:,np.newaxis,:], axis = (2, 3))
+        return diff2
 
     def E_log_gauss(self, X):
         diff2 = self.square_diff(X)
-        return self.E_log_guass_diff2(diff2)
+        return self.E_log_gauss_diff2(diff2)
 
     def E_log_gauss_diff2(self, diff2):
         ## approximate
         ## _TODO implement exact computation
         ##return self.log_gauss_diff2(diff2)
-
-
         const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
         Elogdetp = np.ones(self.m_T) * (self.m_dim * np.log(2))
         for t in range(self.m_T):
@@ -353,7 +379,7 @@ class online_hdp:
         self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
         var_phi_sum = np.flipud(self.m_varphi_ss[1:])
         self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
-        debug(np.exp(expect_log_sticks(self.m_var_sticks)))
+        #debug(np.exp(expect_log_sticks(self.m_var_sticks)))
 
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,

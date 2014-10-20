@@ -9,8 +9,8 @@ import onlinehdpgmm
 import time
 
 meanchangethresh = 0.00001
-random_seed = 999931111
-#random_seed = int(time.time())
+#random_seed = 999931111
+random_seed = int(time.time())
 np.random.seed(random_seed)
 def gen_parameter(dim, k):
     means = normal(np.zeros(dim), np.diag(np.ones(dim) * 10), k)
@@ -58,13 +58,14 @@ def test_hdp():
     hdp.new_init(data)
     init_means = hdp.m_means
     plt.scatter(init_means[:, 0], init_means[:, 1], c = 'y')
+    #data = gen_cops(means, precis, batch_size, cop_size) 
     for i in range(D):
         data = gen_cops(means, precis, batch_size, cop_size) 
         hdp.process_documents(data, var_converge)
-        #hdp.process_documents([data], var_converge)
+        #hdp.process_documents(data, var_converge)
     model = open('model.dat', 'w')
     weight = np.exp(onlinehdpgmm.expect_log_sticks(hdp.m_var_sticks))
-    thresh = 0.01
+    thresh = 0.02
     infer_means = hdp.m_means[weight > thresh]
     plt.scatter(means[:,0], means[:,1], c = 'g', marker='>')
     plt.scatter(infer_means[:, 0], infer_means[:, 1], c = 'r')
