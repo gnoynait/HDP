@@ -322,6 +322,9 @@ class online_hdp:
         const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
         Elogdetp = np.ones(self.m_T) * (self.m_dim * np.log(2))
         for t in range(self.m_T):
+            ## TODO: TODO TODO here is wrong
+            ## should plus the det of cov, not precis!!!!!
+            ## need to verify the problem
             Elogdetp[t] += 0.5 * np.log(linalg.det(self.m_precis[t]/self.m_rel[t]))
             if np.isnan(Elogdetp[t]):
                 print self.m_precis[t]
