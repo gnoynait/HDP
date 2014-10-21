@@ -181,12 +181,13 @@ class online_dp:
         eps = 1e-100
         iter = 0
         
-        diff2 = self.square_diff(X)
+        #diff2 = self.square_diff(X)
         # TODO: diff2 is wrong
         #for s in range(X.shape[0]):
         #    diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
         #Eloggauss:P(X|topic k), shape: sample, topic
-        Eloggauss = self.E_log_gauss_diff2(diff2)
+        #Eloggauss = self.E_log_gauss_diff2(diff2)
+        Eloggauss = self.E_log_gauss(X)
         z = Eloggauss + Elogsticks_1st
         z, norm = log_normalize(z)
         z = np.exp(z)
@@ -225,7 +226,7 @@ class online_dp:
         res = self.E_log_gauss(X)
         return res.argmax(axis=1)
 
-    def square_diff(self, X):
+    def _square_diff(self, X):
         ## return each the square of the distance bettween x and every mean
         """
         diff2 = np.zeros((X.shape[0], self.m_T))
@@ -238,12 +239,32 @@ class online_dp:
         diff = X[:,np.newaxis,:] - self.m_means[np.newaxis,:,:]
         diff2 = np.sum(diff[:,:,:,np.newaxis] * self.m_precis[np.newaxis,:,:,:] * diff[:,:,np.newaxis,:], axis = (2, 3))
         return diff2
-
+    """
     def E_log_gauss(self, X):
         diff2 = self.square_diff(X)
         return self.E_log_gauss_diff2(diff2)
+    """
 
-    def E_log_gauss_diff2(self, diff2):
+    def E_log_gauss(self, X):
+        """ full """
+        cov = np.empty((self.m_T, self.m_dim, self.m_dim))
+        const = np.ones(self.m_T) * (- self.m_dim * np.log(2 * np.pi))
+        for t in range(self.m_T):
+            cov[t] = linalg.inv(self.m_precis[t])
+            const[t] += np.log(linalg.det(self.m_precis[t])) 
+
+        const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
+        for d in range(self.m_dim):
+            const += digamma(0.5 * (self.m_rel - d))
+        const += np.sum(cov * (self.m_means[:,:,np.newaxis] * self.m_means[:,np.newaxis,:] \
+            - self.m_precis), (1, 2))
+        Elog = np.sum(cov[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
+            X[:,np.newaxis,np.newaxis,:], (2, 3))
+        Elog += -2 * np.sum(cov[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
+            self.m_means[np.newaxis, :, np.newaxis, :], (2, 3))
+        Elog += const[np.newaxis, :]
+        return 0.5 * Elog
+    def _E_log_gauss_diff2(self, diff2):
         ## approximate
         ## _TODO implement exact computation
         ##return self.log_gauss_diff2(diff2)
@@ -266,7 +287,7 @@ class online_dp:
         Eloggauss -= const
         return Eloggauss
 
-    def log_gauss_diff2(self, diff2):
+    def _log_gauss_diff2(self, diff2):
         const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
         for t in range(self.m_T):
             const[t] += 0.5 * np.log(linalg.det(self.m_precis[t]))

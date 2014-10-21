@@ -10,7 +10,7 @@ from onlinedpgmm import *
 from sklearn.externals.six.moves import xrange
 
 # Number of samples per component
-n_samples = 100000
+n_samples = 1000
 
 
 T = 25 
@@ -65,7 +65,6 @@ for i, (clf, title) in enumerate([
             continue
         plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
 
-        """
         # Plot an ellipse to show the Gaussian component
         angle = np.arctan(u[1] / u[0])
         angle = 180 * angle / np.pi  # convert to degrees
@@ -73,7 +72,6 @@ for i, (clf, title) in enumerate([
         ell.set_clip_box(splot.bbox)
         ell.set_alpha(0.5)
         splot.add_artist(ell)
-        """
 
     plt.xlim(-6, 4 * np.pi - 6)
     plt.ylim(-5, 5)

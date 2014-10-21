@@ -72,7 +72,7 @@ class suff_stats:
         self.m_var_sticks_ss = np.zeros(T) 
         self.m_var_x = np.zeros((T, dim))
         self.m_var_res = np.zeros(T)
-        self.m_var_x2 = np.zeros((T, dim))
+        self.m_var_x2 = np.zeros(T)
 
 class online_dp:
     ''' hdp model using stick breaking'''
@@ -112,9 +112,10 @@ class online_dp:
         self.m_precis = np.ones(self.m_T) * self.m_rel0
         self.m_var_x = self.m_means * self.m_precis[:, np.newaxis]
         # for precis
-        self.m_pre_a = np.ones(self.m_T)
-        self.m_pre_b = np.ones(self.m_T)
+        self.m_pre_a = 2 * np.ones(self.m_T)
+        self.m_pre_b = 2 * np.ones(self.m_T)
         self.m_var_x2 = -self.m_pre_b
+        self.m_var_x20 = -self.m_pre_b
         """
         self.m_var_x = self.m_means * self.m_rel[:, np.newaxis]
         self.m_var_x2 = self.m_precis.copy()
@@ -199,7 +200,7 @@ class online_dp:
         """
         # bug fix: change '=' to '+='
         ss.m_var_x += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
-        ss.m_var_x2 += np.sum(X[:,np.newaxis,:] * X[:,:,np.newaxis], (1,2)) * z[:, np.newaxis]
+        ss.m_var_x2 += np.sum(np.sum(X * X, axis = 1)[:, np.newaxis] * z[:,:], axis = 0)
         return likelihood
 
     def fit(self, X):
@@ -235,6 +236,7 @@ class online_dp:
 
     def E_log_gauss_diff2(self, diff2):
         Epre = self.m_pre_a / self.m_pre_b
+        print self.m_pre_b
         Elogpre = digamma(self.m_pre_a) - np.log(self.m_pre_b)
         const = -0.5 * self.m_dim / self.m_precis  * Epre -0.5 * self.m_dim * np.log(2 * np.pi) + 0.5 * self.m_dim * Elogpre
         Eloggauss = -0.5 * diff2 * Epre[np.newaxis, :] + const[np.newaxis, :]

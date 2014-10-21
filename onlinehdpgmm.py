@@ -194,12 +194,13 @@ class online_hdp:
         eps = 1e-100
         iter = 0
         
-        diff2 = self.square_diff(X)
+        #diff2 = self.square_diff(X)
         # TODO: diff2 is wrong
         #for s in range(X.shape[0]):
         #    diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
         #Eloggauss:P(X|topic k), shape: sample, topic
-        Eloggauss = self.E_log_gauss_diff2(diff2)
+        #Eloggauss = self.E_log_gauss_diff2(diff2)
+        Eloggauss = self.E_log_gauss(X)
 
         #TODO
         #while iter < max_iter and (converge <= 0.0 or converge > var_converge):
@@ -287,8 +288,8 @@ class online_hdp:
 
     def fit(self, X):
         self.new_init(X)
-        size = X.shape[0] #/ 5
-        for i in range(500):
+        size = X.shape[0] / 5
+        for i in range(200):
             np.random.shuffle(X)
             data = X[:size]
             self.process_documents([data])
@@ -311,10 +312,31 @@ class online_hdp:
         diff2 = np.sum(diff[:,:,:,np.newaxis] * self.m_precis[np.newaxis,:,:,:] * diff[:,:,np.newaxis,:], axis = (2, 3))
         return diff2
 
+    """
     def E_log_gauss(self, X):
         diff2 = self.square_diff(X)
         return self.E_log_gauss_diff2(diff2)
+    """
+    def E_log_gauss(self, X):
+        """ full """
+        cov = np.empty((self.m_T, self.m_dim, self.m_dim))
+        const = np.ones(self.m_T) * (- self.m_dim * np.log(2 * np.pi))
+        for t in range(self.m_T):
+            cov[t] = linalg.inv(self.m_precis[t])
+            const[t] += np.log(linalg.det(self.m_precis[t])) 
 
+        const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
+        for d in range(self.m_dim):
+            const += digamma(0.5 * (self.m_rel - d))
+        const += np.sum(cov * (self.m_means[:,:,np.newaxis] * self.m_means[:,np.newaxis,:] \
+            - self.m_precis), (1, 2))
+        Elog = np.sum(cov[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
+            X[:,np.newaxis,np.newaxis,:], (2, 3))
+        Elog += -2 * np.sum(cov[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
+            self.m_means[np.newaxis, :, np.newaxis, :], (2, 3))
+        Elog += const[np.newaxis, :]
+        return 0.5 * Elog
+    """
     def E_log_gauss_diff2(self, diff2):
         ## approximate
         ## _TODO implement exact computation
@@ -349,6 +371,7 @@ class online_hdp:
         Eloggauss -= 0.5 * diff2
         Eloggauss -= const
         return Eloggauss
+    """
 
     def update_model(self, sstats):
         #debug(self.m_updatect)
@@ -382,7 +405,7 @@ class online_hdp:
         self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
         var_phi_sum = np.flipud(self.m_varphi_ss[1:])
         self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
-        #debug(np.exp(expect_log_sticks(self.m_var_sticks)))
+        debug(np.exp(expect_log_sticks(self.m_var_sticks)))
 
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,
