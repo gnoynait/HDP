@@ -100,25 +100,38 @@ class online_dp:
 
         self.m_dim = dim # the vector dimension
         ## the prior of each gaussian
-        self.m_rel0 = np.ones(self.m_T) * (self.m_dim + 20)
+        self.m_rel0 = np.ones(self.m_T) * (self.m_dim + 2)
         self.m_var_x0 = np.zeros((self.m_T, self.m_dim))
         self.m_var_x20 = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) \
             * self.m_rel0[:, np.newaxis, np.newaxis]
         ## for gaussian
         self.m_means = np.random.normal(0, 1, (self.m_T, self.m_dim))
-        self.m_precis = np.tile(np.eye(self.m_dim) * 0.01, (self.m_T, 1, 1))
+        self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
         self.m_updatect = 0 
 
-    def natual_to_par(self, x2, x, r):
+    def natual_to_par(self, x2, x, r, msg='unknow'):
         mean = x / r[:, np.newaxis]
-        x2 = x2 / r[:,np.newaxis, np.newaxis]
-        cov = x2 - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
+        cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
         precis = np.empty(cov.shape)
         for t in range(self.m_T):
+            if linalg.det(cov[t]) < 0:
+                print msg
+                #print cov[t]
+                s =  x2[t] / r[t]
+                a =  x[t]
+                m = x[t] / r[t]
+                #print s
+                #print m
+                c =  s - a[:, np.newaxis] * a[np.newaxis,:] / (r[t] * r[t])
+                #print c
+                #print s - m[:,np.newaxis] * m[np.newaxis,:]
+                print linalg.det(c)
+                #print r[t]
+                #sys.exit()
             precis[t] = linalg.inv(cov[t])
         return precis, mean
 
@@ -172,7 +185,7 @@ class online_dp:
 
     def fit(self, X):
         self.new_init(X)
-        size = 5000
+        size = 500
         for i in range(500):
             samples = np.array(np.random.sample(size) * X.shape[0], dtype = 'int32')
             data = X[samples]
@@ -190,8 +203,12 @@ class online_dp:
             cov[t] = linalg.inv(self.m_precis[t])
             const[t] += np.log(linalg.det(self.m_precis[t])) 
             if np.isnan(const[t]):
+                """
                 print self.m_precis[t]
+                print linalg.inv(self.m_precis[t])
+                print linalg.det(self.m_precis[t])
                 print self.m_rel[t]
+                """
                 sys.exit()
 
         const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
@@ -220,12 +237,16 @@ class online_dp:
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * scale
 
-        #debug(rhot)
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
         var_x2, var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
+        self.natual_to_par(var_x2, var_x, self.m_rel, 'init')
+        #print sstats.m_var_x
+        #print sstats.m_var_x2
         var_x = var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
         var_x2 = var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2)
-        self.m_precis, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel)
+        self.natual_to_par(sstats.m_var_x2, sstats.m_var_x, sstats.m_var_res, 'test')
+        self.natual_to_par(self.m_var_x20, self.m_var_x0, self.m_rel0, 'rel0')
+        self.m_precis, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel, 'update')
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))

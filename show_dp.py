@@ -13,16 +13,16 @@ from sklearn.externals.six.moves import xrange
 n_samples = 1000
 
 
-T = 50 
+T = 25 
 K = 25 
 topics = 10
 D = 500
 alpha = 0.1 # second level
-gamma = 1 # first level
+gamma = 0.1 # first level
 kappa = 0.95
 tau = 10
 dim = 2
-total = 10000
+total = 1000000
 
 # Generate random sample following a sine curve
 #random_seed = int(time.time())
