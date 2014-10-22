@@ -13,19 +13,20 @@ from sklearn.externals.six.moves import xrange
 n_samples = 1000
 
 
-T = 25 
+T = 50 
 K = 25 
 topics = 10
 D = 500
 alpha = 0.1 # second level
-gamma = 0.01 # first level
+gamma = 1 # first level
 kappa = 0.95
 tau = 10
 dim = 2
-total = 50000
+total = 10000
 
 # Generate random sample following a sine curve
-random_seed = int(time.time())
+#random_seed = int(time.time())
+random_seed = 1
 np.random.seed(random_seed)
 X = np.zeros((n_samples, 2))
 step = 4 * np.pi / n_samples
@@ -53,6 +54,7 @@ for i, (clf, title) in enumerate([
     clf.fit(X)
     splot = plt.subplot(1, 1, 1 + i)
     Y_ = clf.predict(X)
+    print clf.m_means
     for i, (mean, precis, color) in enumerate(zip(
             clf.m_means, clf.m_precis, color_iter)):
         v, w = linalg.eigh(linalg.inv(precis))

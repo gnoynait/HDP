@@ -10,10 +10,11 @@ import cPickle
 from sklearn import cluster
 from scipy.special import digamma as _digamma, gammaln as _gammaln
 import time
+import sys
 
 #meanchangethresh = 0.00001
-#random_seed = 999931111
-random_seed = int(time.time())
+random_seed = 999931111
+#random_seed = int(time.time())
 np.random.seed(random_seed)
 random.seed(random_seed)
 #min_adding_noise_point = 10
@@ -23,8 +24,8 @@ rhot_bound = 0.0
 
 def debug(*W):
     for w in W:
-        print w
-    print '-' * 75
+        sys.stderr.write(str(w) + '\n')
+    sys.stderr.write('-' * 75 + '\n')
 
 def log_normalize(v):
     ''' return log(sum(exp(v)))'''
@@ -94,31 +95,19 @@ class online_dp:
         self.m_var_sticks = np.zeros((2, T-1))
         self.m_var_sticks[0] = 1.0
         self.m_var_sticks[1] = self.m_gamma
-        # make a uniform at beginning
-        #self.m_var_sticks[1] = range(T-1, 0, -1)
 
         self.m_varphi_ss = np.zeros(T)
 
         self.m_dim = dim # the vector dimension
         ## the prior of each gaussian
-        #self.m_means0 = np.zeros(self.m_dim)
-        #self.m_precis0 = np.eye(self.m_dim)
-        self.m_rel0 = self.m_dim + 2 
-        self.m_var_x0 = np.zeros(self.m_dim)
-        self.m_var_x20 = np.tile(np.eye(self.m_dim) * self.m_rel0, (self.m_T, 1, 1))
+        self.m_rel0 = np.ones(self.m_T) * (self.m_dim + 20)
+        self.m_var_x0 = np.zeros((self.m_T, self.m_dim))
+        self.m_var_x20 = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) \
+            * self.m_rel0[:, np.newaxis, np.newaxis]
         ## for gaussian
-        ## TODO random init these para
-        self.m_means = np.random.normal(0, 0.2, (self.m_T, self.m_dim))
-        self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
+        self.m_means = np.random.normal(0, 1, (self.m_T, self.m_dim))
+        self.m_precis = np.tile(np.eye(self.m_dim) * 0.01, (self.m_T, 1, 1))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
-        self.m_var_x2, self.m_var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
-        """
-        self.m_var_x = self.m_means * self.m_rel[:, np.newaxis]
-        self.m_var_x2 = self.m_precis.copy()
-        for t in range(self.m_T):
-        	self.m_var_x2[t] += np.dot(self.m_means[t][:,np.newaxis], self.m_means[t][np.newaxis,:])
-        self.m_var_x2 *= self.m_rel0
-        """
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
@@ -127,40 +116,32 @@ class online_dp:
     def natual_to_par(self, x2, x, r):
         mean = x / r[:, np.newaxis]
         x2 = x2 / r[:,np.newaxis, np.newaxis]
-        precis = x2 - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
+        cov = x2 - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
+        precis = np.empty(cov.shape)
+        for t in range(self.m_T):
+            precis[t] = linalg.inv(cov[t])
         return precis, mean
 
     def par_to_natual(self, precis, mean, r):
         x = mean * r[:, np.newaxis]
-        x2 = precis + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]
+        cov = np.empty(precis.shape)
+        for t in range(self.m_T):
+            cov[t] = linalg.inv(precis[t])
+        x2 = cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]
         x2 = x2 * r[:, np.newaxis, np.newaxis]
         return x2, x
         
     def new_init(self, c):
-        """ need implement"""
-        """
-        self.m_means = cluster.KMeans(
-            n_clusters=self.m_T,
-            random_state=self.random_state).fit(c).cluster_centers_[::-1]
-        """
         np.random.shuffle(c)
         self.m_means[:] = c[0:self.m_T]
-        self.m_var_x2, self.m_var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
-        """
-        self.m_var_x2 = self.m_precis.copy()
-        for t in range(self.m_T):
-        	self.m_var_x2[t] += np.dot(self.m_means[t][:,np.newaxis], self.m_means[t][np.newaxis,:])
-        self.m_var_x2 *= self.m_rel0
-        """
 
     def process_documents(self, cops, var_converge = 0.000001):
         size = 0
         for c in cops:
             size += c.shape[0]
         ss = suff_stats(self.m_T, self.m_dim, size) 
-        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) # global sticks
+        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
 
-        # run variational inference on some new docs
         score = 0.0
         for i, cop in enumerate(cops):
             cop_score = self.doc_e_step(cop, ss, Elogsticks_1st, var_converge)
@@ -171,53 +152,28 @@ class online_dp:
         return score
 
     def doc_e_step(self, X, ss, Elogsticks_1st, var_converge, max_iter=100):
-        """
-        e step for a single corps
-        """
-
         likelihood = 0.0
         old_likelihood = -1e100
         converge = 1.0 
         eps = 1e-100
         iter = 0
         
-        #diff2 = self.square_diff(X)
-        # TODO: diff2 is wrong
-        #for s in range(X.shape[0]):
-        #    diff2[s] = np.sum((X[s] - self.m_means) ** 2, axis = 1)
-        #Eloggauss:P(X|topic k), shape: sample, topic
-        #Eloggauss = self.E_log_gauss_diff2(diff2)
         Eloggauss = self.E_log_gauss(X)
         z = Eloggauss + Elogsticks_1st
         z, norm = log_normalize(z)
         z = np.exp(z)
-        #ss.m_var_sticks_ss += np.sum(var_phi, 0)   
         ss.m_var_sticks_ss += np.sum(z, 0)   
 
-        #debug(phi)
-        #debug(var_phi)
-        #debug(z)
         ss.m_var_res += np.sum(z, axis = 0)
-        #x2 = np.zeros((X.shape[0], self.m_dim, self.m_dim))
         x2 = X[:,:,np.newaxis] * X[:,np.newaxis,:]
-        """
-        for n in range(X.shape[0]):
-            x2[n,:,:] = np.dot(X[n][:, np.newaxis], X[n][np.newaxis,:])
-        for k in range(self.m_T):
-            ss.m_var_x[k] += np.sum(X * z[:, k][:,np.newaxis], axis = 0) 
-            t = x2.reshape((x2.shape[0], -1))
-            ss.m_var_x2[k] += np.sum(t * z[:,k][:,np.newaxis], axis = 0)
-        """
-        # bug fix: change '=' to '+='
         ss.m_var_x += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
         ss.m_var_x2 += np.sum(x2[:,np.newaxis,:,:] * z[:,:,np.newaxis,np.newaxis], axis = 0) 
         return likelihood
 
     def fit(self, X):
         self.new_init(X)
-        size = 100
+        size = 5000
         for i in range(500):
-            #np.random.shuffle(X)
             samples = np.array(np.random.sample(size) * X.shape[0], dtype = 'int32')
             data = X[samples]
             self.process_documents([data])
@@ -226,78 +182,31 @@ class online_dp:
         res = self.E_log_gauss(X)
         return res.argmax(axis=1)
 
-    def _square_diff(self, X):
-        ## return each the square of the distance bettween x and every mean
-        """
-        diff2 = np.zeros((X.shape[0], self.m_T))
-        for t in range(self.m_T):
-            diff = X - self.m_means[t]
-            diff2[:,t] = np.sum(np.dot(diff,self.m_precis[t]) * diff, axis = 1)
-        return diff2
-        """
-
-        diff = X[:,np.newaxis,:] - self.m_means[np.newaxis,:,:]
-        diff2 = np.sum(diff[:,:,:,np.newaxis] * self.m_precis[np.newaxis,:,:,:] * diff[:,:,np.newaxis,:], axis = (2, 3))
-        return diff2
-    """
-    def E_log_gauss(self, X):
-        diff2 = self.square_diff(X)
-        return self.E_log_gauss_diff2(diff2)
-    """
-
     def E_log_gauss(self, X):
         """ full """
-        cov = np.empty((self.m_T, self.m_dim, self.m_dim))
+        cov = np.empty(self.m_precis.shape)
         const = np.ones(self.m_T) * (- self.m_dim * np.log(2 * np.pi))
         for t in range(self.m_T):
             cov[t] = linalg.inv(self.m_precis[t])
             const[t] += np.log(linalg.det(self.m_precis[t])) 
+            if np.isnan(const[t]):
+                print self.m_precis[t]
+                print self.m_rel[t]
+                sys.exit()
 
         const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
         for d in range(self.m_dim):
             const += digamma(0.5 * (self.m_rel - d))
-        const += np.sum(cov * (self.m_means[:,:,np.newaxis] * self.m_means[:,np.newaxis,:] \
-            - self.m_precis), (1, 2))
-        Elog = np.sum(cov[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
+        const += np.sum(self.m_precis * (cov - self.m_means[:,:,np.newaxis] * \
+            self.m_means[:,np.newaxis,:]), axis = (1, 2))
+        Elog = -np.sum(self.m_precis[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
             X[:,np.newaxis,np.newaxis,:], (2, 3))
-        Elog += -2 * np.sum(cov[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
+        Elog += 2 * np.sum(self.m_precis[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
             self.m_means[np.newaxis, :, np.newaxis, :], (2, 3))
         Elog += const[np.newaxis, :]
         return 0.5 * Elog
-    def _E_log_gauss_diff2(self, diff2):
-        ## approximate
-        ## _TODO implement exact computation
-        ##return self.log_gauss_diff2(diff2)
-        const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
-        Elogdetp = np.ones(self.m_T) * (self.m_dim * np.log(2))
-        for t in range(self.m_T):
-            Elogdetp[t] += 0.5 * np.log(linalg.det(self.m_precis[t]/self.m_rel[t]))
-            if np.isnan(Elogdetp[t]):
-                print self.m_precis[t]
-                print linalg.det(self.m_precis[t]/self.m_rel[t])
-                sys.exit()
-
-        for d in range(self.m_dim):
-            Elogdetp += digamma((self.m_rel -d) / 2)
-        const += 0.5 * Elogdetp
-
-        Eloggauss = np.zeros((diff2.shape[0], self.m_T))
-        Eloggauss -= 0.5 * diff2
-        Eloggauss -= 0.5 * np.sum(self.m_precis.reshape((self.m_T, -1)), axis=1)
-        Eloggauss -= const
-        return Eloggauss
-
-    def _log_gauss_diff2(self, diff2):
-        const = np.ones(self.m_T) * (-0.5 * self.m_dim * np.log(2 * np.pi))
-        for t in range(self.m_T):
-            const[t] += 0.5 * np.log(linalg.det(self.m_precis[t]))
-        Eloggauss = np.zeros((diff2.shape[0], self.m_T))
-        Eloggauss -= 0.5 * diff2
-        Eloggauss -= const
-        return Eloggauss
 
     def update_model(self, sstats):
-        #debug(self.m_updatect)
         # rhot will be between 0 and 1, and says how much to weight
         # the information we got from this mini-batch.
         rhot = pow(self.m_tau + self.m_updatect, -self.m_kappa)
@@ -313,15 +222,10 @@ class online_dp:
 
         #debug(rhot)
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
-        self.m_var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
-        self.m_var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2.reshape((-1, self.m_dim, self.m_dim)))
-        """
-        self.m_means = self.m_var_x / self.m_rel[:, np.newaxis]
-        for t in range(self.m_T):
-            self.m_precis[t] = self.m_var_x2[t] / self.m_rel[t] - \
-                np.dot(self.m_means[t][:, np.newaxis], self.m_means[t][np.newaxis,:])
-        """
-        self.m_precis, self.m_means = self.natual_to_par(self.m_var_x2, self.m_var_x, self.m_rel)
+        var_x2, var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
+        var_x = var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
+        var_x2 = var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2)
+        self.m_precis, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
