@@ -199,7 +199,8 @@ class online_dp:
             self.process_documents([data])
 
     def predict(self, X):
-        res = self.E_log_gauss(X)
+        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
+        res = self.E_log_gauss(X) + Elogsticks_1st
         return res.argmax(axis=1)
 
     def E_log_gauss(self, X):
