@@ -25,8 +25,8 @@ dim = 2
 total = 1000000
 
 # Generate random sample following a sine curve
-#random_seed = int(time.time())
-random_seed = 1
+random_seed = int(time.time())
+#random_seed = 1
 np.random.seed(random_seed)
 X = np.zeros((n_samples, 2))
 step = 4 * np.pi / n_samples
@@ -37,7 +37,7 @@ for i in xrange(X.shape[0]):
     X[i, 1] = 3 * (np.sin(x) + np.random.normal(0, .2))
 
 
-color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k', 'w'])
+color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k'])
 
 
 for i, (clf, title) in enumerate([

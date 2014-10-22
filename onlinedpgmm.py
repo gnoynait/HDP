@@ -13,8 +13,8 @@ import time
 import sys
 
 #meanchangethresh = 0.00001
-random_seed = 999931111
-#random_seed = int(time.time())
+#random_seed = 999931111
+random_seed = int(time.time())
 np.random.seed(random_seed)
 random.seed(random_seed)
 #min_adding_noise_point = 10
@@ -102,16 +102,23 @@ class online_dp:
         ## the prior of each gaussian
         self.m_rel0 = np.ones(self.m_T) * (self.m_dim + 2)
         self.m_var_x0 = np.zeros((self.m_T, self.m_dim))
-        self.m_var_x20 = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) \
+        self.m_var_x20 = np.tile(np.eye(self.m_dim) * 0.5, (self.m_T, 1, 1)) \
             * self.m_rel0[:, np.newaxis, np.newaxis]
         ## for gaussian
         self.m_means = np.random.normal(0, 1, (self.m_T, self.m_dim))
-        self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
+        self.m_precis = self.m_var_x20.copy()
 
         self.m_tau = tau + 1
         self.m_kappa = kappa
         self.m_updatect = 0 
+    def valid_precis(self, means, cov):
+		""" can't work"""
+		precis = means[:,:, np.newaxis] * means[:, np.newaxis, :] + cov * np.eye(self.m_dim)[np.newaxis, :, :]
+		for t in range(self.m_T):
+			precis[t] = linalg.inv(precis[t])
+		return precis
+
 
     def natual_to_par(self, x2, x, r, msg='unknow'):
         mean = x / r[:, np.newaxis]
@@ -185,8 +192,8 @@ class online_dp:
 
     def fit(self, X):
         self.new_init(X)
-        size = 500
-        for i in range(500):
+        size = 200
+        for i in range(1000):
             samples = np.array(np.random.sample(size) * X.shape[0], dtype = 'int32')
             data = X[samples]
             self.process_documents([data])
@@ -214,12 +221,12 @@ class online_dp:
         const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
         for d in range(self.m_dim):
             const += digamma(0.5 * (self.m_rel - d))
-        const += np.sum(self.m_precis * (cov - self.m_means[:,:,np.newaxis] * \
-            self.m_means[:,np.newaxis,:]), axis = (1, 2))
-        Elog = -np.sum(self.m_precis[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
-            X[:,np.newaxis,np.newaxis,:], (2, 3))
-        Elog += 2 * np.sum(self.m_precis[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
-            self.m_means[np.newaxis, :, np.newaxis, :], (2, 3))
+        const += np.sum(np.sum(self.m_precis * (cov - self.m_means[:,:,np.newaxis] * \
+            self.m_means[:,np.newaxis,:]), axis = -1), -1)
+        Elog = -np.sum(np.sum(self.m_precis[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
+            X[:,np.newaxis,np.newaxis,:], -1), -1)
+        Elog += 2 * np.sum(np.sum(self.m_precis[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
+            self.m_means[np.newaxis, :, np.newaxis, :], -1), -1)
         Elog += const[np.newaxis, :]
         return 0.5 * Elog
 
@@ -237,8 +244,8 @@ class online_dp:
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * scale
 
-        self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
         var_x2, var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
+        self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
         self.natual_to_par(var_x2, var_x, self.m_rel, 'init')
         #print sstats.m_var_x
         #print sstats.m_var_x2
