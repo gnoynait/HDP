@@ -77,17 +77,15 @@ class suff_stats:
 
 class online_dp:
     ''' hdp model using stick breaking'''
-    def __init__(self, T, K, D, alpha, gamma, kappa, tau, total, dim = 500):
+    def __init__(self, T, gamma, kappa, tau, total, dim = 2):
         """
         gamma: first level concentration
-        alpha: second level concentration
         T: top level truncation level
-        D: number of documents in the corpus
         kappa: learning rate
         tau: slow down parameter
+        total: total number of data
         """
         self.m_T = T # Top level truncation
-        self.m_alpha = alpha # second level concentration
         self.m_gamma = gamma # first level truncation
         self.m_total = total # total ponits
 
@@ -112,33 +110,12 @@ class online_dp:
         self.m_tau = tau + 1
         self.m_kappa = kappa
         self.m_updatect = 0 
-    def valid_precis(self, means, cov):
-		""" can't work"""
-		precis = means[:,:, np.newaxis] * means[:, np.newaxis, :] + cov * np.eye(self.m_dim)[np.newaxis, :, :]
-		for t in range(self.m_T):
-			precis[t] = linalg.inv(precis[t])
-		return precis
 
-
-    def natual_to_par(self, x2, x, r, msg='unknow'):
+    def natual_to_par(self, x2, x, r):
         mean = x / r[:, np.newaxis]
         cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
         precis = np.empty(cov.shape)
         for t in range(self.m_T):
-            if linalg.det(cov[t]) < 0:
-                print msg
-                #print cov[t]
-                s =  x2[t] / r[t]
-                a =  x[t]
-                m = x[t] / r[t]
-                #print s
-                #print m
-                c =  s - a[:, np.newaxis] * a[np.newaxis,:] / (r[t] * r[t])
-                #print c
-                #print s - m[:,np.newaxis] * m[np.newaxis,:]
-                print linalg.det(c)
-                #print r[t]
-                #sys.exit()
             precis[t] = linalg.inv(cov[t])
         return precis, mean
 
@@ -168,7 +145,6 @@ class online_dp:
             score += cop_score
 
         self.update_model(ss)
-    
         return score
 
     def doc_e_step(self, X, ss, Elogsticks_1st, var_converge, max_iter=100):
@@ -247,21 +223,16 @@ class online_dp:
 
         var_x2, var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
-        self.natual_to_par(var_x2, var_x, self.m_rel, 'init')
-        #print sstats.m_var_x
-        #print sstats.m_var_x2
+
         var_x = var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
         var_x2 = var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2)
-        self.natual_to_par(sstats.m_var_x2, sstats.m_var_x, sstats.m_var_res, 'test')
-        self.natual_to_par(self.m_var_x20, self.m_var_x0, self.m_rel0, 'rel0')
-        self.m_precis, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel, 'update')
+        self.m_precis, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
         self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
         var_phi_sum = np.flipud(self.m_varphi_ss[1:])
         self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
-        #debug(np.exp(expect_log_sticks(self.m_var_sticks)))
 
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,

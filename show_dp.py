@@ -10,14 +10,11 @@ from onlinedpgmm import *
 from sklearn.externals.six.moves import xrange
 
 # Number of samples per component
-n_samples = 1000
+n_samples = 10000
 
 
 T = 25 
-K = 25 
 topics = 10
-D = 500
-alpha = 0.1 # second level
 gamma = 0.5 # first level
 kappa = 0.95
 tau = 10
@@ -26,7 +23,7 @@ total = 1000000
 
 # Generate random sample following a sine curve
 random_seed = int(time.time())
-#random_seed = 1
+#random_seed = 2014
 np.random.seed(random_seed)
 X = np.zeros((n_samples, 2))
 step = 4 * np.pi / n_samples
@@ -49,12 +46,11 @@ for i, (clf, title) in enumerate([
 #        (mixture.DPGMM(n_components=10, covariance_type='diag', alpha=100.,
 #                       n_iter=100),
 #         "Dirichlet Process,alpha=100.")]):
-        (online_dp(T, K, D, alpha, gamma, kappa, tau, total, dim), "online dp")]):
+        (online_dp(T, gamma, kappa, tau, total, dim), "online dp")]):
 
     clf.fit(X)
     splot = plt.subplot(1, 1, 1 + i)
     Y_ = clf.predict(X)
-    print clf.m_means
     for i, (mean, precis, color) in enumerate(zip(
             clf.m_means, clf.m_precis, color_iter)):
         v, w = linalg.eigh(linalg.inv(precis))
