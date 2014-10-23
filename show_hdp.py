@@ -10,15 +10,15 @@ from onlinehdpgmm import *
 from sklearn.externals.six.moves import xrange
 
 # Number of samples per component
-n_samples = 500
+n_samples = 5000
 
 
-T = 100
-K = 30 
+T = 50
+K = 20 
 topics = 10
 D = 500
-alpha = 0.01 # second level
-gamma = 0.1 # first level
+alpha = 3 # second level
+gamma = 10 # first level
 kappa = 0.75
 tau = 1
 dim = 2
@@ -49,7 +49,7 @@ for i, (clf, title) in enumerate([
 #         "Dirichlet Process,alpha=100.")]):
         (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim), "online hdp")]):
 
-    clf.fit(X)
+    clf.fit(X, 200, 200)
     splot = plt.subplot(1, 1, 1 + i)
     Y_ = clf.predict(X)
     for i, (mean, precis, color) in enumerate(zip(

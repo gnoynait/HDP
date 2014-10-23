@@ -12,14 +12,11 @@ from scipy.special import digamma as _digamma, gammaln as _gammaln
 import time
 import sys
 
-#meanchangethresh = 0.00001
 #random_seed = 999931111
 random_seed = int(time.time())
 np.random.seed(random_seed)
 random.seed(random_seed)
-#min_adding_noise_point = 10
-#min_adding_noise_ratio = 1 
-#mu0 = 0.3
+
 rhot_bound = 0.0
 
 def debug(*W):
@@ -166,10 +163,9 @@ class online_dp:
         ss.m_var_x2 += np.sum(x2[:,np.newaxis,:,:] * z[:,:,np.newaxis,np.newaxis], axis = 0) 
         return likelihood
 
-    def fit(self, X):
+    def fit(self, X, size = 200, max_iter = 1000):
         self.new_init(X)
-        size = 200
-        for i in range(1000):
+        for i in range(max_iter):
             samples = np.array(np.random.sample(size) * X.shape[0], dtype = 'int32')
             data = X[samples]
             self.process_documents([data])
