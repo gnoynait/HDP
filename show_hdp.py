@@ -17,8 +17,8 @@ T = 50
 K = 20 
 topics = 10
 D = 500
-alpha = 3 # second level
-gamma = 10 # first level
+alpha = 1 # second level
+gamma = 1 # first level
 kappa = 0.75
 tau = 1
 dim = 2
@@ -28,6 +28,18 @@ total = 100000
 np.random.seed(0)
 X = np.zeros((n_samples, 2))
 step = 4 * np.pi / n_samples
+
+def gen_grid_data(n):
+	width, height = 5, 5
+	comp1 = int(np.random.uniform() * n)
+	comp2 = n - comp1
+	means = np.array(np.random.uniform(size = (2, 2)) * 5, dtype = "int") - 2
+	x1 = np.random.multivariate_normal(means[0], np.eye(2) * 0.05, comp1)
+	x2 = np.random.multivariate_normal(means[1], np.eye(2) * 0.05, comp2)
+	x = np.vstack((x1, x2))
+	np.random.shuffle(x)
+	return x
+	
 
 for i in xrange(X.shape[0]):
     x = i * step - 6
@@ -49,8 +61,14 @@ for i, (clf, title) in enumerate([
 #         "Dirichlet Process,alpha=100.")]):
         (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim), "online hdp")]):
 
-    clf.fit(X, 200, 200)
+    #clf.fit(X, 200, 200)
     splot = plt.subplot(1, 1, 1 + i)
+    X = np.array([0, 0], dtype = 'float64')
+    for c in range(200):
+    	print c
+    	d = gen_grid_data(500)
+    	X = np.vstack((X, d[:10,:]))
+        clf.process_documents([d])
     Y_ = clf.predict(X)
     for i, (mean, precis, color) in enumerate(zip(
             clf.m_means, clf.m_precis, color_iter)):
