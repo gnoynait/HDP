@@ -8,7 +8,7 @@ import matplotlib as mpl
 from sklearn import mixture
 from onlinehdpgmm import *
 from sklearn.externals.six.moves import xrange
-
+from onlinedpgmm import online_dp
 # Number of samples per component
 n_samples = 5000
 
@@ -18,14 +18,14 @@ K = 20
 topics = 10
 D = 500
 alpha = 1 # second level
-gamma = 1 # first level
+gamma = 2 # first level
 kappa = 0.75
 tau = 1
 dim = 2
 total = 100000
 
 # Generate random sample following a sine curve
-np.random.seed(0)
+np.random.seed(1)
 X = np.zeros((n_samples, 2))
 step = 4 * np.pi / n_samples
 
@@ -59,16 +59,16 @@ for i, (clf, title) in enumerate([
 #        (mixture.DPGMM(n_components=10, covariance_type='diag', alpha=100.,
 #                       n_iter=100),
 #         "Dirichlet Process,alpha=100.")]):
-        (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim), "online hdp")]):
+        (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim), "online hdp"), (online_dp(T, gamma, kappa, tau, total, dim), "online dp")]):
 
     #clf.fit(X, 200, 200)
-    splot = plt.subplot(1, 1, 1 + i)
+    splot = plt.subplot(2, 1, 1 + i)
     X = np.array([0, 0], dtype = 'float64')
-    for c in range(200):
+    for c in range(500):
     	print c
-    	d = gen_grid_data(500)
+    	d = gen_grid_data(100)
     	X = np.vstack((X, d[:10,:]))
-        clf.process_documents([d])
+        clf.process_documents([d, gen_grid_data(100), gen_grid_data(100), gen_grid_data(100)])
     Y_ = clf.predict(X)
     for i, (mean, precis, color) in enumerate(zip(
             clf.m_means, clf.m_precis, color_iter)):
@@ -80,7 +80,7 @@ for i, (clf, title) in enumerate([
         # components.
         if not np.any(Y_ == i):
             continue
-        plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
+        #plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
 
         # Plot an ellipse to show the Gaussian component
         angle = np.arctan(u[1] / u[0])
