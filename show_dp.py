@@ -20,7 +20,8 @@ kappa = 0.95
 tau = 10
 dim = 2
 total = 1000000
-
+print 'deperated'
+sys.exit()
 # Generate random sample following a sine curve
 random_seed = int(time.time())
 #random_seed = 2014
@@ -46,7 +47,7 @@ for i, (clf, title) in enumerate([
 #        (mixture.DPGMM(n_components=10, covariance_type='diag', alpha=100.,
 #                       n_iter=100),
 #         "Dirichlet Process,alpha=100.")]):
-        (online_dp(T, gamma, kappa, tau, total, dim), "online dp")]):
+        (online_dp(T, gamma, kappa, tau, total, dim, 'full'), "online dp")]):
 
     clf.fit(X)
     splot = plt.subplot(1, 1, 1 + i)

@@ -6,9 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 from sklearn import mixture
-from onlinehdpgmm import *
+from onlinedpgmm import *
 from sklearn.externals.six.moves import xrange
-from onlinedpgmm import online_dp
 # Number of samples per component
 n_samples = 5000
 
@@ -59,20 +58,23 @@ for i, (clf, title) in enumerate([
 #        (mixture.DPGMM(n_components=10, covariance_type='diag', alpha=100.,
 #                       n_iter=100),
 #         "Dirichlet Process,alpha=100.")]):
-        (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim), "online hdp"), (online_dp(T, gamma, kappa, tau, total, dim), "online dp")]):
+        (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, 'diagonal'), "online hdp"), 
+        (online_dp(T, gamma, kappa, tau, total, dim, 'diagonal'), "online dp")]):
 
-    #clf.fit(X, 200, 200)
     splot = plt.subplot(2, 1, 1 + i)
-    X = np.array([0, 0], dtype = 'float64')
-    for c in range(500):
-    	print c
-    	d = gen_grid_data(100)
-    	X = np.vstack((X, d[:10,:]))
-        clf.process_documents([d, gen_grid_data(100), gen_grid_data(100), gen_grid_data(100)])
+    if False:
+        clf.fit(X, 200, 200)
+    else:
+        X = np.array([0, 0], dtype = 'float64')
+        for c in range(200):
+            print c
+            d = gen_grid_data(100)
+            X = np.vstack((X, d[:10,:]))
+            clf.process_documents([d, gen_grid_data(100), gen_grid_data(100), gen_grid_data(100)])
     Y_ = clf.predict(X)
-    for i, (mean, precis, color) in enumerate(zip(
-            clf.m_means, clf.m_precis, color_iter)):
-        v, w = linalg.eigh(linalg.inv(precis))
+    for i, (mean, cov, color) in enumerate(zip(
+            clf.m_means, clf.get_cov(), color_iter)):
+        v, w = linalg.eigh(cov)
         #v, w = linalg.eigh(precis)
         u = w[0] / linalg.norm(w[0])
         # as the DP will not use every component it has access to
@@ -80,7 +82,7 @@ for i, (clf, title) in enumerate([
         # components.
         if not np.any(Y_ == i):
             continue
-        #plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
+        plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
 
         # Plot an ellipse to show the Gaussian component
         angle = np.arctan(u[1] / u[0])

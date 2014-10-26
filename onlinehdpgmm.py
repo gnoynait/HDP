@@ -32,6 +32,8 @@ class online_hdp(online_dp):
         online_dp.__init__(self, T, gamma, kappa, tau, total, dim)
         self.m_K = K # second level truncation
         self.m_alpha = alpha # second level concentration
+        print 'deperated'
+        sys.exit()
 
     def doc_e_step(self, X, ss, Elogsticks_1st, var_converge, max_iter=100):
         """
