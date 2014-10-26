@@ -62,19 +62,27 @@ def expect_log_sticks(sticks):
     return Elogsticks 
 
 class suff_stats:
-    def __init__(self, T, dim, size):
+    def __init__(self, T, dim, size, mode):
         # T: top level topic number
         # dim: dimension
         # size: batch size
         self.m_batchsize = size
         self.m_var_sticks_ss = np.zeros(T) 
-        self.m_var_x = np.zeros((T, dim))
-        self.m_var_x2 = np.zeros((T, dim, dim))
         self.m_var_res = np.zeros(T)
+        self.m_var_x = np.zeros((T, dim))
+        if mode = 'full':
+            self.m_var_x2 = np.zeros((T, dim, dim))
+        elif mode = 'diagonal':
+            self.m_var_x2 = np.zeros((T, dim))
+        elif mode = 'sperical':
+            self.m_var_x2 = np.neros(T)
+        else:
+            print 'unknow mode'
+            sys.exit()
 
 class online_dp:
     ''' hdp model using stick breaking'''
-    def __init__(self, T, gamma, kappa, tau, total, dim = 2):
+    def __init__(self, T, gamma, kappa, tau, total, dim = 2, mode="spherical"):
         """
         gamma: first level concentration
         T: top level truncation level
@@ -94,35 +102,56 @@ class online_dp:
         self.m_varphi_ss = np.zeros(T)
 
         self.m_dim = dim # the vector dimension
+        ## mode: spherical, diagonal, full
+        self.mode = mode
         ## the prior of each gaussian
         self.m_rel0 = np.ones(self.m_T) * (self.m_dim + 2)
         self.m_var_x0 = np.zeros((self.m_T, self.m_dim))
-        self.m_var_x20 = np.tile(np.eye(self.m_dim) * 0.5, (self.m_T, 1, 1)) \
-            * self.m_rel0[:, np.newaxis, np.newaxis]
-        ## for gaussian
         self.m_means = np.random.normal(0, 1, (self.m_T, self.m_dim))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
-        self.m_precis = self.m_var_x20.copy()
+        if mode == 'full':
+            self.m_var_x20 = np.tile(np.eye(self.m_dim)*0.5, (self.m_T, 1, 1)) \
+                * self.m_rel0[:, np.newaxis, np.newaxis]
+            self.m_cov = self.m_var_x20.copy()
+            self.m_precis = np.tile(np.eye(self.m_dim)*2, (self.m_T, 1, 1)) \
+                * self.m_rel0[:, np.newaxis, np.newaxis]
+            self.m_log_det_precis = np.ones((self.m_T)) * self.m_dim * 2
+        elif mode == 'diagonal':
+            self.m_var_x20 = np.ones((self.m_T, self.m_dim)) * 0.5
+            self.m_b = self.m_var_x20.copy()
+        elif mode == 'spherical':
+            self.m_var_x20 = np.ones(self.m_T) * 0.5
+            self.m_b = self.m_var_x20.copy()
+        else:
+            print 'unkown mode'
+            sys.exit()
 
+        ## for online learning
         self.m_tau = tau + 1
         self.m_kappa = kappa
         self.m_updatect = 0 
 
     def natual_to_par(self, x2, x, r):
         mean = x / r[:, np.newaxis]
-        cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
-        precis = np.empty(cov.shape)
-        for t in range(self.m_T):
-            precis[t] = linalg.inv(cov[t])
-        return precis, mean
+        if self.mode = 'full':
+            cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
+        elif self.mode = 'diagonal':
+            cov = 0.5 * (x2 - mean * mean * r[:, np.newaxis])
+        elif self.mode = 'spherical':
+            cov = 0.5 * (x2 - np.sum(mean * mean, 1) * r)
+        else:
+            print 'unkown'
+        return cov, mean
 
-    def par_to_natual(self, precis, mean, r):
+    def par_to_natual(self, cov, mean, r):
         x = mean * r[:, np.newaxis]
-        cov = np.empty(precis.shape)
-        for t in range(self.m_T):
-            cov[t] = linalg.inv(precis[t])
-        x2 = cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]
-        x2 = x2 * r[:, np.newaxis, np.newaxis]
+        if self.mode = 'full':
+            x2 = cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]
+            x2 = x2 * r[:, np.newaxis, np.newaxis]
+        elif self.mode = 'diagonal':
+            x2 = 2 * cov + r[:, np.newaxis] * mean * mean
+        elif self.mode = 'spherical':
+            x2 = 2 * cov + r * np.sum(mean * mean, 1)
         return x2, x
         
     def new_init(self, c):
@@ -176,32 +205,33 @@ class online_dp:
         return res.argmax(axis=1)
 
     def E_log_gauss(self, X):
-        """ full """
-        cov = np.empty(self.m_precis.shape)
-        const = np.ones(self.m_T) * (- self.m_dim * np.log(2 * np.pi))
-        for t in range(self.m_T):
-            cov[t] = linalg.inv(self.m_precis[t])
-            const[t] += np.log(linalg.det(self.m_precis[t])) 
-            if np.isnan(const[t]):
-                """
-                print self.m_precis[t]
-                print linalg.inv(self.m_precis[t])
-                print linalg.det(self.m_precis[t])
-                print self.m_rel[t]
-                """
-                sys.exit()
-
-        const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
-        for d in range(self.m_dim):
-            const += digamma(0.5 * (self.m_rel - d))
-        const += np.sum(np.sum(self.m_precis * (cov - self.m_means[:,:,np.newaxis] * \
-            self.m_means[:,np.newaxis,:]), axis = -1), -1)
-        Elog = -np.sum(np.sum(self.m_precis[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
-            X[:,np.newaxis,np.newaxis,:], -1), -1)
-        Elog += 2 * np.sum(np.sum(self.m_precis[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
-            self.m_means[np.newaxis, :, np.newaxis, :], -1), -1)
-        Elog += const[np.newaxis, :]
-        return 0.5 * Elog
+        if self.mode = 'full':
+            precis = np.empty(self.m_cov.shape)
+            const = np.ones(self.m_T) * (- self.m_dim * np.log(2 * np.pi))
+            const += self.m_log_det_precis
+            const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
+            for d in range(self.m_dim):
+                const += digamma(0.5 * (self.m_rel - d))
+            const += np.sum(np.sum(precis * (cov - self.m_means[:,:,np.newaxis] * \
+                self.m_means[:,np.newaxis,:]), axis = -1), -1)
+            Elog = -np.sum(np.sum(precis[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
+                X[:,np.newaxis,np.newaxis,:], -1), -1)
+            Elog += 2 * np.sum(np.sum(precis[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
+                self.m_means[np.newaxis, :, np.newaxis, :], -1), -1)
+            Elog += const[np.newaxis, :]
+            Elog *= 0.5
+        elif self.mode = 'diagonal':
+            t = self.m_rel * 0.5 + 1
+            Elog = -0.5 * t * np.sum(X[:,np.newaxis,:] * X[:,np.newaxis],:] / self.m_cov[np.newaxis,:,:], 2)
+            Elog += t * np.sum(self.m_means / self.m_cov[np.newaxis,:,:] * X[:,np.newaxis,;], 2)
+            const = 0.5 * (digamma(t) * self.m_dim - np.sum(np.log(self.m_cov), 1) - np.sum(t * (self.m_means * self.m_means / self.m_cov), 1) - self.m_dim / self.m_rel - self.m_dim * np.log(2 * np.pi))
+            Elog += const[np.newaxis, :]
+        elif self.mode = 'spherical':
+            t = 0.5 * (self.m_dim * self.m_rel - self.m_dim + 2)
+            const = 0.5 * (self.m_dim * np.log(2 * np.pi) + self.m_dim * digamma(t) - self.m_dim * np.log(self.m_cov) - t * np.sum(self.m_means * self.m_means, 1) / self.m_cov - self.m_dim / self.m_rel)
+            Elog = t * np.sum(self.m_means[np.newaxis,:,:] / self.m_cov[np.newaxis,:,:] * X[:,np.newaxis,:], 1)
+            Elog -= 0.5 * t / self.m_cov[np.newaxis, :] * np.sum(X * X,1)[:,np.newaxis]
+        return Elog
 
     def update_model(self, sstats):
         # rhot will be between 0 and 1, and says how much to weight
@@ -217,12 +247,16 @@ class online_dp:
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * scale
 
-        var_x2, var_x = self.par_to_natual(self.m_precis, self.m_means, self.m_rel)
+        var_x2, var_x = self.par_to_natual(self.m_cov, self.m_means, self.m_rel)
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
 
         var_x = var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
         var_x2 = var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2)
-        self.m_precis, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel)
+        self.m_cov, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel)
+        if self.mode = 'full':
+            for t in range(self.m_T):
+                self.m_preics[t] = linalg.inv(self.m_cov[t])
+                self.m_log_det_precis[t] = linalg.det(self.m_precis[t])
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
@@ -233,5 +267,115 @@ class online_dp:
     def save_model(self, output):
         model = {'sticks':self.m_var_sticks,
                 'means': self.m_means,
-                'precis':self.m_precis}
+                'precis':self.m_cov}
         cPickle.dump(model, output)
+
+class online_hdp(online_dp):
+    ''' hdp model using stick breaking'''
+    def __init__(self, T, K, D, alpha, gamma, kappa, tau, total, dim = 500):
+        """
+        gamma: first level concentration
+        alpha: second level concentration
+        T: top level truncation level
+        K: second level truncation level
+        D: number of documents in the corpus
+        kappa: learning rate
+        tau: slow down parameter
+        """
+        online_dp.__init__(self, T, gamma, kappa, tau, total, dim)
+        self.m_K = K # second level truncation
+        self.m_alpha = alpha # second level concentration
+
+    def doc_e_step(self, X, ss, Elogsticks_1st, var_converge, max_iter=100):
+        """
+        e step for a single corps
+        """
+
+        ## very similar to the hdp equations
+        v = np.zeros((2, self.m_K-1))  
+        v[0] = 1.0
+        v[1] = self.m_alpha
+
+        # The following line is of no use.
+        Elogsticks_2nd = expect_log_sticks(v)
+
+        # back to the uniform
+        phi = np.ones((X.shape[0], self.m_K)) / self.m_K
+
+        likelihood = 0.0
+        old_likelihood = -1e100
+        converge = 1.0 
+        eps = 1e-100
+        iter = 0
+        
+        Eloggauss = self.E_log_gauss(X)
+
+        #TODO
+        #while iter < max_iter and (converge <= 0.0 or converge > var_converge):
+        while iter < max_iter:
+            ### update variational parameters
+            # var_phi 
+            if iter < 3:
+                var_phi = np.dot(phi.T, Eloggauss)
+                (log_var_phi, log_norm) = log_normalize(var_phi)
+                var_phi = np.exp(log_var_phi)
+            else:
+                var_phi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
+                (log_var_phi, log_norm) = log_normalize(var_phi)
+                var_phi = np.exp(log_var_phi)
+            
+            # phi
+            if iter < 3:
+                phi = np.dot(Eloggauss, var_phi.T)
+                (log_phi, log_norm) = log_normalize(phi)
+                phi = np.exp(log_phi)
+            else:
+                phi = np.dot(Eloggauss, var_phi.T) + Elogsticks_2nd
+                (log_phi, log_norm) = log_normalize(phi)
+                phi = np.exp(log_phi)
+
+            # v
+            v[0] = 1.0 + np.sum(phi[:,:self.m_K-1], 0)
+            phi_cum = np.flipud(np.sum(phi[:,1:], 0))
+            v[1] = self.m_alpha + np.flipud(np.cumsum(phi_cum))
+            Elogsticks_2nd = expect_log_sticks(v)
+            #debug(np.exp(Elogsticks_2nd))
+
+            ## TODO: likelihood need complete
+            likelihood = 0.0
+            # compute likelihood
+            # var_phi part/ C in john's notation
+            likelihood += np.sum((Elogsticks_1st - log_var_phi) * var_phi)
+
+            # v part/ v in john's notation, john's beta is alpha here
+            log_alpha = np.log(self.m_alpha)
+            likelihood += (self.m_K-1) * log_alpha
+            dig_sum = sp.psi(np.sum(v, 0))
+            likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
+            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
+
+            # Z part 
+            likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
+
+            # X part, the data part
+            likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
+
+            #debug(likelihood, old_likelihood)
+
+            converge = (likelihood - old_likelihood)/abs(old_likelihood)
+            old_likelihood = likelihood
+
+            if converge < -0.000001:
+                print "warning, likelihood is decreasing!"
+            
+            iter += 1
+            
+        # update the suff_stat ss 
+        z = np.dot(phi, var_phi) 
+        ss.m_var_sticks_ss += np.sum(var_phi, 0)   
+
+        ss.m_var_res += np.sum(z, axis = 0)
+        x2 = X[:,:,np.newaxis] * X[:,np.newaxis,:]
+        ss.m_var_x += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
+        ss.m_var_x2 += np.sum(x2[:,np.newaxis,:,:] * z[:,:,np.newaxis,np.newaxis], axis = 0) 
+        return likelihood
