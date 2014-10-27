@@ -8,6 +8,7 @@ import matplotlib as mpl
 from sklearn import mixture
 from onlinedpgmm import *
 from sklearn.externals.six.moves import xrange
+import time
 # Number of samples per component
 n_samples = 5000
 
@@ -24,6 +25,8 @@ dim = 2
 total = 100000
 
 # Generate random sample following a sine curve
+#rand_seed = 1
+rand_seed = int(time.time())
 np.random.seed(1)
 X = np.zeros((n_samples, 2))
 step = 4 * np.pi / n_samples
@@ -48,7 +51,9 @@ for i in xrange(X.shape[0]):
 
 color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm'])
 
-
+#mode = 'full'
+#mode = 'spherical'
+mode = 'diagonal'
 for i, (clf, title) in enumerate([
 #        (mixture.GMM(n_components=10, covariance_type='full', n_iter=100),
 #         "Expectation-maximization"),
@@ -58,16 +63,15 @@ for i, (clf, title) in enumerate([
 #        (mixture.DPGMM(n_components=10, covariance_type='diag', alpha=100.,
 #                       n_iter=100),
 #         "Dirichlet Process,alpha=100.")]):
-        (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, 'diagonal'), "online hdp"), 
-        (online_dp(T, gamma, kappa, tau, total, dim, 'diagonal'), "online dp")]):
+        (online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode), "online hdp"), 
+        (online_dp(T, gamma, kappa, tau, total, dim, mode), "online dp")]):
 
     splot = plt.subplot(2, 1, 1 + i)
-    if True:
+    if False:
         clf.fit(X, 200, 200)
     else:
         X = np.array([0, 0], dtype = 'float64')
         for c in range(200):
-            print c
             d = gen_grid_data(100)
             X = np.vstack((X, d[:10,:]))
             clf.process_documents([d, gen_grid_data(100), gen_grid_data(100), gen_grid_data(100)])

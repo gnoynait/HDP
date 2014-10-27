@@ -110,7 +110,6 @@ class online_dp:
         self.m_means = np.random.normal(0, 1, (self.m_T, self.m_dim))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
         if mode == 'full':
-            #TODO check this
             self.m_var_x20 = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) \
                 * self.m_rel0[:, np.newaxis, np.newaxis]
             self.m_cov = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
@@ -121,7 +120,7 @@ class online_dp:
             self.m_cov = np.ones((self.m_T, self.m_dim))
         elif mode == 'spherical':
             self.m_var_x20 = np.ones(self.m_T) * (self.m_dim * self.m_rel0 - self.m_dim + 2)
-            self.m_cov = self.ones(self.m_T)
+            self.m_cov = np.ones(self.m_T)
         else:
             print 'unkown mode'
             sys.exit()
@@ -334,12 +333,11 @@ class online_hdp(online_dp):
         
         Eloggauss = self.E_log_gauss(X)
 
-        #TODO
-        #while iter < max_iter and (converge <= 0.0 or converge > var_converge):
-        while iter < max_iter:
+        while iter < max_iter and (converge <= 0.0 or converge > var_converge):
+        #while iter < max_iter:
             ### update variational parameters
             # var_phi 
-            if iter < 3:
+            if iter < 0:
                 var_phi = np.dot(phi.T, Eloggauss)
                 (log_var_phi, log_norm) = log_normalize(var_phi)
                 var_phi = np.exp(log_var_phi)
@@ -349,7 +347,7 @@ class online_hdp(online_dp):
                 var_phi = np.exp(log_var_phi)
             
             # phi
-            if iter < 3:
+            if iter < 0:
                 phi = np.dot(Eloggauss, var_phi.T)
                 (log_phi, log_norm) = log_normalize(phi)
                 phi = np.exp(log_phi)
@@ -393,7 +391,7 @@ class online_hdp(online_dp):
                 print "warning, likelihood is decreasing!"
             
             iter += 1
-            
+        debug(iter)    
         # update the suff_stat ss 
         z = np.dot(phi, var_phi) 
         self.add_to_sstats(var_phi, z, X, ss)
