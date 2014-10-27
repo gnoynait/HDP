@@ -13,17 +13,22 @@ import time
 n_samples = 5000
 
 
-T = 50
+T = 50 
 K = 20 
 topics = 10
 D = 500
+## sph 5 0.5
+## dia 2 1
 alpha = 1 # second level
-gamma = 2 # first level
+gamma = 1 # first level
 kappa = 0.75
 tau = 1
 dim = 2
 total = 100000
 
+mode = 'full'
+#mode = 'diagonal'
+#mode = 'spherical'
 # Generate random sample following a sine curve
 #rand_seed = 1
 rand_seed = int(time.time())
@@ -51,9 +56,6 @@ for i in xrange(X.shape[0]):
 
 color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm'])
 
-#mode = 'full'
-#mode = 'spherical'
-mode = 'diagonal'
 for i, (clf, title) in enumerate([
 #        (mixture.GMM(n_components=10, covariance_type='full', n_iter=100),
 #         "Expectation-maximization"),
@@ -67,7 +69,7 @@ for i, (clf, title) in enumerate([
         (online_dp(T, gamma, kappa, tau, total, dim, mode), "online dp")]):
 
     splot = plt.subplot(2, 1, 1 + i)
-    if False:
+    if True:
         clf.fit(X, 200, 200)
     else:
         X = np.array([0, 0], dtype = 'float64')

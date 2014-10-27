@@ -4,7 +4,7 @@ from numpy.random import multivariate_normal as normal
 from numpy.random import gamma
 from numpy.random import dirichlet
 from numpy.random import multinomial
-import onlinehdpgmm
+import onlinedpgmm
 
 import time
 
@@ -45,9 +45,9 @@ def test_hdp():
     gamma = 0.1 
     kappa = 0.9
     tau = 1
-    dim = 2
+    dim = 500
     total = 500000
-    hdp = onlinehdpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim)
+    hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, 'full')
     var_converge = 0.00001
 
     cop_size = 1000

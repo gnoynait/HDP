@@ -4,6 +4,7 @@ from scipy import linalg
 import os, sys, math, time
 import utils
 from corpus import document, corpus
+from scipy.spatial import distance
 from itertools import izip
 import random
 import cPickle
@@ -109,21 +110,25 @@ class online_dp:
         self.m_var_x0 = np.zeros((self.m_T, self.m_dim))
         self.m_means = np.random.normal(0, 1, (self.m_T, self.m_dim))
         self.m_rel = np.ones(self.m_T) * self.m_rel0
+        self.m_const = np.zeros(self.m_T)
         if mode == 'full':
             self.m_var_x20 = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) \
                 * self.m_rel0[:, np.newaxis, np.newaxis]
-            self.m_cov = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
+            cov = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
             self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) 
-            self.m_log_det_precis = np.ones(self.m_T)
         elif mode == 'diagonal':
             self.m_var_x20 = np.ones((self.m_T, self.m_dim)) * (self.m_dim + 2)
-            self.m_cov = np.ones((self.m_T, self.m_dim))
+            cov = np.ones((self.m_T, self.m_dim))
+            self.m_precis = np.ones((self.m_T, self.m_dim))
         elif mode == 'spherical':
             self.m_var_x20 = np.ones(self.m_T) * (self.m_dim * self.m_rel0 - self.m_dim + 2)
-            self.m_cov = np.ones(self.m_T)
+            cov = np.ones(self.m_T)
+            self.m_precis = np.ones(self.m_T)
         else:
             print 'unkown mode'
             sys.exit()
+        x2, x1 = self.par_to_natual(cov, self.m_means, self.m_rel)
+        self.natual_to_par(x2, x1, self.m_rel)
 
         ## for online learning
         self.m_tau = tau + 1
@@ -131,27 +136,44 @@ class online_dp:
         self.m_updatect = 0 
     def get_cov(self):
         cov = np.empty((self.m_T, self.m_dim, self.m_dim), dtype = 'float64')
-        for t in range(self.m_T):
-            if self.mode == 'full':
-                cov[t] = self.m_cov[t]
-            elif self.mode == 'diagonal':
-                cov[t] = np.diag(self.m_cov[t] / (0.5 * self.m_rel[t] + 1))
-            elif self.mode == 'spherical':
-                cov[t] = np.eye(self.m_dim) * (self.m_cov[t] / (0.5 * (self.m_dim * self.m_rel[t] - self.m_dim + 2)))
+        if self.mode == 'full':
+            for t in range(self.m_T):
+                cov[t] = linalg.inv(self.m_precis[t])
+        elif self.mode == 'diagonal':
+            for t in range(self.m_T):
+                cov[t] = np.diag(1.0 / self.m_precis[t])
+        elif self.mode == 'spherical':
+            for t in range(self.m_T):
+                cov[t] = np.eye(self.m_dim) / self.m_precis[t]
+        else:
+            print 'unkonw mode'
         return cov
 
     def natual_to_par(self, x2, x, r):
+        self.m_var_x = x
         mean = x / r[:, np.newaxis]
+        self.m_means[:] = mean
         if self.mode == 'full':
             cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
+            for t in range(self.m_T):
+                self.m_precis[t] = linalg.inv(cov[t])
+                self.m_const[t] = 0.5 * (linalg.det(self.m_precis[t]) + np.sum(digamma(0.5 * (self.m_rel[t] - np.arange(self.m_dim)))))
+            self.m_const -= 0.5 * self.m_dim * (np.log(self.m_rel * 0.5) + 1.0 / self.m_rel + np.log(2 * np.pi))
+            self.m_var_x2 = (cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]) * r[:, np.newaxis, np.newaxis]
         elif self.mode == 'diagonal':
             cov = 0.5 * (x2 - mean * mean * r[:, np.newaxis])
+            a = 0.5 * self.m_rel + 1
+            self.m_precis[:,:] = a[:,np.newaxis] / cov
+            self.m_const[:] = 0.5 * self.m_dim * (digamma(a) - 1.0 / self.m_rel - np.log(2 * np.pi)) - 0.5 * np.sum(np.log(cov), 1)
+            self.m_var_x2 = 2 * cov + r[:, np.newaxis] * mean * mean
         elif self.mode == 'spherical':
             cov = 0.5 * (x2 - np.sum(mean * mean, 1) * r)
+            a = 0.5 * (self.m_dim * (self.m_rel - 1)) + 1
+            self.m_precis[:] = a / cov
+            self.m_const[:] = 0.5 * self.m_dim * (digamma(a) - 1.0 / self.m_rel - np.log(cov) - np.log(2 * np.pi))
+            self.m_var_x2 = 2 * cov + r * np.sum(mean * mean, 1)
         else:
             print 'unkown'
-        return cov, mean
-
     def par_to_natual(self, cov, mean, r):
         x = mean * r[:, np.newaxis]
         if self.mode == 'full':
@@ -161,8 +183,9 @@ class online_dp:
             x2 = 2 * cov + r[:, np.newaxis] * mean * mean
         elif self.mode == 'spherical':
             x2 = 2 * cov + r * np.sum(mean * mean, 1)
+        else:
+            print 'unkown mode'
         return x2, x
-        
     def new_init(self, c):
         np.random.shuffle(c)
         self.m_means[:] = c[0:self.m_T]
@@ -202,14 +225,17 @@ class online_dp:
         ss.m_var_res += np.sum(z, axis = 0)
         ss.m_var_x += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
         if self.mode == 'full':
-            x2 = X[:,:,np.newaxis] * X[:,np.newaxis,:]
-            ss.m_var_x2 += np.sum(x2[:,np.newaxis,:,:] * z[:,:,np.newaxis,np.newaxis], 0) 
+            for n in range(X.shape[0]):
+                x2 = X[n,:,np.newaxis] * X[n,np.newaxis,:]
+                ss.m_var_x2 += x2[np.newaxis,:,:] * z[n,:,np.newaxis,np.newaxis]
         elif self.mode == 'diagonal':
             x2 = X * X
             ss.m_var_x2 += np.sum(x2[:,np.newaxis,:] * z[:,:,np.newaxis], 0)
         elif self.mode == 'spherical':
             x2 = np.sum(X * X, 1)
             ss.m_var_x2 += np.sum(x2[:,np.newaxis] * z, 0)
+        else:
+            print 'unkonw mode'
 
     def fit(self, X, size = 200, max_iter = 1000):
         self.new_init(X)
@@ -222,39 +248,27 @@ class online_dp:
         Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
         res = self.E_log_gauss(X) + Elogsticks_1st
         return res.argmax(axis=1)
-
     def E_log_gauss(self, X):
+        ds = self.diff_square(X)
+        return -0.5 * ds + self.m_const[np.newaxis]
+
+    def diff_square(self, X):
+        ds = np.zeros((X.shape[0], self.m_T))
         if self.mode == 'full':
-            const = np.ones(self.m_T) * (- self.m_dim * np.log(2 * np.pi))
-            const += self.m_log_det_precis
-            const -= self.m_dim * (np.log(0.5 * self.m_rel) + 1 + 1 / self.m_rel)
-            for d in range(self.m_dim):
-                const += digamma(0.5 * (self.m_rel - d))
-            const += np.sum(np.sum(self.m_precis * (self.m_cov - self.m_means[:,:,np.newaxis] * \
-                self.m_means[:,np.newaxis,:]), axis = -1), -1)
-            Elog = -np.sum(np.sum(self.m_precis[np.newaxis,:,:,:] * X[:,np.newaxis,:,np.newaxis] * \
-                X[:,np.newaxis,np.newaxis,:], -1), -1)
-            Elog += 2 * np.sum(np.sum(self.m_precis[np.newaxis,:,:,:] * X[:, np.newaxis,:, np.newaxis] * \
-                self.m_means[np.newaxis, :, np.newaxis, :], -1), -1)
-            Elog += const[np.newaxis, :]
-            Elog *= 0.5
-
+            for t in range(self.m_T):
+                ds[:,t] = (distance.cdist(X, self.m_means[t][np.newaxis], \
+                    "mahalanobis", VI=self.m_precis[t]) ** 2).reshape(-1)
         elif self.mode == 'diagonal':
-            t = self.m_rel * 0.5 + 1
-            Elog = -0.5 * t[np.newaxis, :] * np.sum(X[:,np.newaxis,:] * X[:,np.newaxis,:] / self.m_cov[np.newaxis,:,:], 2)
-            Elog += t[np.newaxis,:] * np.sum(self.m_means[np.newaxis,:,:] / self.m_cov[np.newaxis,:,:] * X[:,np.newaxis,:], 2)
-            const = 0.5 * (digamma(t) * self.m_dim - \
-                np.sum(np.log(self.m_cov), 1) - \
-                t * np.sum(self.m_means * self.m_means / self.m_cov, 1) - \
-                self.m_dim / self.m_rel - self.m_dim * np.log(2 * np.pi))
-            Elog += const[np.newaxis, :]
-
+            for t in range(self.m_T):
+                ds[:,t] = np.sum(((X - self.m_means[t][np.newaxis]) ** 2) *\
+                    self.m_precis[t][np.newaxis], 1)
         elif self.mode == 'spherical':
-            t = 0.5 * (self.m_dim * self.m_rel - self.m_dim + 2)
-            const = 0.5 * (self.m_dim * np.log(2 * np.pi) + self.m_dim * digamma(t) - self.m_dim * np.log(self.m_cov) - t * np.sum(self.m_means * self.m_means, 1) / self.m_cov - self.m_dim / self.m_rel)
-            Elog = t * np.sum(self.m_means[np.newaxis,:,:] / self.m_cov[np.newaxis,:,np.newaxis] * X[:,np.newaxis,:], 2)
-            Elog -= 0.5 * t / self.m_cov[np.newaxis, :] * np.sum(X * X,1)[:,np.newaxis]
-        return Elog
+            for t in range(self.m_T):
+                ds[:,t] = np.sum(((X - self.m_means[t][np.newaxis]) ** 2), 1)\
+                    * self.m_precis[t]
+        else:
+            print 'unkonw mode'
+        return ds
 
     def update_model(self, sstats):
         # rhot will be between 0 and 1, and says how much to weight
@@ -270,16 +284,11 @@ class online_dp:
         self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
                sstats.m_var_sticks_ss * scale
 
-        var_x2, var_x = self.par_to_natual(self.m_cov, self.m_means, self.m_rel)
         self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
 
-        var_x = var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
-        var_x2 = var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2)
-        self.m_cov, self.m_means = self.natual_to_par(var_x2, var_x, self.m_rel)
-        if self.mode == 'full':
-            for t in range(self.m_T):
-                self.m_precis[t] = linalg.inv(self.m_cov[t])
-                self.m_log_det_precis[t] = linalg.det(self.m_precis[t])
+        var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
+        var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2)
+        self.natual_to_par(var_x2, var_x, self.m_rel)
 
         ## update top level sticks 
         var_sticks_ss = np.zeros((2, self.m_T-1))
