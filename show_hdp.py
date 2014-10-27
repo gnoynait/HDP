@@ -62,7 +62,7 @@ for i, (clf, title) in enumerate([
         (online_dp(T, gamma, kappa, tau, total, dim, 'diagonal'), "online dp")]):
 
     splot = plt.subplot(2, 1, 1 + i)
-    if False:
+    if True:
         clf.fit(X, 200, 200)
     else:
         X = np.array([0, 0], dtype = 'float64')
@@ -75,17 +75,16 @@ for i, (clf, title) in enumerate([
     for i, (mean, cov, color) in enumerate(zip(
             clf.m_means, clf.get_cov(), color_iter)):
         v, w = linalg.eigh(cov)
-        #v, w = linalg.eigh(precis)
         u = w[0] / linalg.norm(w[0])
         # as the DP will not use every component it has access to
         # unless it needs it, we shouldn't plot the redundant
         # components.
         if not np.any(Y_ == i):
             continue
-        plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
+        #plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
 
         # Plot an ellipse to show the Gaussian component
-        angle = np.arctan(u[1] / u[0])
+        angle = np.arctan(u[1] / (u[0] + np.finfo(np.float32).eps))
         angle = 180 * angle / np.pi  # convert to degrees
         ell = mpl.patches.Ellipse(mean, v[0], v[1], 180 + angle, color=color)
         ell.set_clip_box(splot.bbox)

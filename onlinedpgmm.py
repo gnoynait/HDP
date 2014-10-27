@@ -111,18 +111,17 @@ class online_dp:
         self.m_rel = np.ones(self.m_T) * self.m_rel0
         if mode == 'full':
             #TODO check this
-            self.m_var_x20 = np.tile(np.eye(self.m_dim)*0.5, (self.m_T, 1, 1)) \
+            self.m_var_x20 = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) \
                 * self.m_rel0[:, np.newaxis, np.newaxis]
-            self.m_cov = self.m_var_x20.copy()
-            self.m_precis = np.tile(np.eye(self.m_dim)*2, (self.m_T, 1, 1)) \
-                * self.m_rel0[:, np.newaxis, np.newaxis]
-            self.m_log_det_precis = np.ones((self.m_T)) * self.m_dim * 2
+            self.m_cov = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
+            self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) 
+            self.m_log_det_precis = np.ones(self.m_T)
         elif mode == 'diagonal':
-            self.m_var_x20 = np.ones((self.m_T, self.m_dim)) * 0.5
-            self.m_cov = self.m_var_x20.copy()
+            self.m_var_x20 = np.ones((self.m_T, self.m_dim)) * (self.m_dim + 2)
+            self.m_cov = np.ones((self.m_T, self.m_dim))
         elif mode == 'spherical':
-            self.m_var_x20 = np.ones(self.m_T) * 0.5
-            self.m_cov = self.m_var_x20.copy()
+            self.m_var_x20 = np.ones(self.m_T) * (self.m_dim * self.m_rel0 - self.m_dim + 2)
+            self.m_cov = self.ones(self.m_T)
         else:
             print 'unkown mode'
             sys.exit()
@@ -136,7 +135,7 @@ class online_dp:
         for t in range(self.m_T):
             if self.mode == 'full':
                 cov[t] = self.m_cov[t]
-            elif self.mode == 'diagnal':
+            elif self.mode == 'diagonal':
                 cov[t] = np.diag(self.m_cov[t] / (0.5 * self.m_rel[t] + 1))
             elif self.mode == 'spherical':
                 cov[t] = np.eye(self.m_dim) * (self.m_cov[t] / (0.5 * (self.m_dim * self.m_rel[t] - self.m_dim + 2)))
