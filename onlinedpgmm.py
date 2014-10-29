@@ -342,11 +342,11 @@ class online_hdp(online_dp):
         
         Eloggauss = self.E_log_gauss(X)
 
-        while iter < max_iter and (converge <= 0.0 or converge > var_converge):
+        while iter < 10 or (iter < max_iter and (converge <= 0.0 or converge > var_converge)):
         #while iter < max_iter:
             ### update variational parameters
             # var_phi 
-            if iter < 0:
+            if iter < 5:
                 var_phi = np.dot(phi.T, Eloggauss)
                 (log_var_phi, log_norm) = log_normalize(var_phi)
                 var_phi = np.exp(log_var_phi)
@@ -356,7 +356,7 @@ class online_hdp(online_dp):
                 var_phi = np.exp(log_var_phi)
             
             # phi
-            if iter < 0:
+            if iter < 5:
                 phi = np.dot(Eloggauss, var_phi.T)
                 (log_phi, log_norm) = log_normalize(phi)
                 phi = np.exp(log_phi)
