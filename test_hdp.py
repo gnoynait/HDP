@@ -45,9 +45,11 @@ def test_hdp():
     gamma = 0.1 
     kappa = 0.9
     tau = 1
-    dim = 500
+    dim = 200
     total = 500000
-    hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, 'full')
+    mode = 'diagonal'
+    #mode = 'full'
+    hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
     var_converge = 0.00001
 
     cop_size = 1000

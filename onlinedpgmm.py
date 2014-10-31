@@ -400,7 +400,7 @@ class online_hdp(online_dp):
                 print "warning, likelihood is decreasing!"
             
             iter += 1
-        debug(iter)    
+        #debug(iter)    
         # update the suff_stat ss 
         z = np.dot(phi, var_phi) 
         self.add_to_sstats(var_phi, z, X, ss)
