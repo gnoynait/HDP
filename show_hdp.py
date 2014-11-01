@@ -173,6 +173,80 @@ def show_grid():
     plot(plt.subplot(224), hdp, X, 'HDP', lim, 'm')
     plt.show()
 
-    
+from sklearn.cluster import KMeans
+from sklearn import mixture
+def show_comp():
+    np.random.seed(0)
+    n_samples = 500
+    color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm'])
+
+    C1 = np.array([[0., -0.1],[1.7, .4]])
+    C2 = np.array([[0.1, 0.],[0., 1.]])
+    X = np.r_[np.dot(np.random.randn(n_samples, 2), C1),
+              np.dot(np.random.randn(n_samples, 2), C1) + np.array([-3, 1.]),
+                        .7 * np.random.randn(n_samples, 2) + np.array([-6, 3])]
+    k = 5
+    kmeans = KMeans(k)
+    kmeans.fit(X)
+    splot = plt.subplot(2, 2, 1)
+    Y_ = kmeans.predict(X)
+    for i, color in zip(range(k), color_iter):
+        splot.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
+        plt.xlim(-10, 6)
+        plt.ylim(-3, 6)
+        plt.xticks(())
+        plt.yticks(())
+        plt.title('k-means')
+    # Fit a mixture of Gaussians with EM using five components
+    gmm = mixture.GMM(n_components=5, covariance_type='full')
+    gmm.fit(X)
+
+    # Fit a Dirichlet process mixture of Gaussians using five components
+    dpgmm = mixture.DPGMM(n_components=50, covariance_type='full', alpha=500)
+    dpgmm.fit(X)
+
+    T = 50 
+    mode = 'full'
+    np.random.seed(1)
+    batch_size = 50
+    n_iter = 100
+    gamma = 1 
+    online_dpgmm = online_dp(T, gamma, kappa, tau, total, dim, mode)
+    online_dpgmm.fit(X, batch_size, n_iter)
+    lim = [-10, 6, -3, 6]
+    plot(plt.subplot(2,2, 4), online_dpgmm,X, 'online DPGMM, %s, $\\alpha=%g$'%(mode, gamma), lim, 'd')
+
+    for i, (clf, title) in enumerate([(gmm, 'GMM'),
+            (dpgmm, 'DPGMM(from sklearn), $\\alpha=500$')]):
+        splot = plt.subplot(2, 2, 2 + i)
+        Y_ = clf.predict(X)
+        for i, (mean, covar, color) in enumerate(zip(
+                    clf.means_, clf._get_covars(), color_iter)):
+            v, w = linalg.eigh(covar)
+            u = w[0] / linalg.norm(w[0])
+            # as the DP will not use every component it has access to
+            # unless it needs it, we shouldn't plot the redundant
+            # components.
+            if not np.any(Y_ == i):
+                continue
+            plt.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=color)
+
+        # Plot an ellipse to show the Gaussian component
+        angle = np.arctan(u[1] / u[0])
+        angle = 180 * angle / np.pi  # convert to degrees
+        ell = mpl.patches.Ellipse(mean, v[0], v[1], 180 + angle, color=color)
+        ell.set_clip_box(splot.bbox)
+        ell.set_alpha(0.5)
+        splot.add_artist(ell)
+
+        plt.xlim(-10, 6)
+        plt.ylim(-3, 6)
+        plt.xticks(())
+        plt.yticks(())
+        plt.title(title)
+
+    plt.show()
+
 #show_cosine()
-show_grid()
+#show_grid()
+show_comp()
