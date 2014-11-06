@@ -1,0 +1,248 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{natbib}
+\bibliographystyle{unsrt}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{CJK}
+\begin{CJK*}{GBK}{song}
+
+\begin{document}
+\title{Online Inference for HDP of Gaussian Mixture Model}
+\author{Tian Yong}
+\maketitle
+\begin{equation}
+\beta_k' \sim Beta(1, \lambda),
+\beta_k = \beta'_k\prod_{l=1}^{k-1}(1-\beta'_l)
+p(\mu_k, \Lambda_k) = \emph{N}
+\end{equation}
+\section{spherical mode}
+$$
+\begin{aligned}
+\ln P(x)& =
+\left(
+    \begin{aligned}
+        - \frac{\lambda}{2}\\
+        \lambda u
+    \end{aligned}
+\right)
+\cdot
+\left(
+    \begin{aligned}
+        x^\mathrm{T}x\\
+        x
+    \end{aligned}
+\right) -\frac{1}{2}\lambda u ^ \mathrm{T} u + \frac{D}{2} \ln \lambda - \frac{D}{2} \ln2\pi \\
+& = \ln\textbf{N}(x|\mu,(\lambda I)^{-1})
+\end{aligned}
+$$
+
+
+
+$$
+\begin{aligned}
+\ln P(\mu,\lambda | \gamma, \nu, b) =
+&\left(
+    \begin{aligned}
+        \gamma(\upsilon^\mathrm{T}\upsilon + 2\nu)\\
+        \gamma \upsilon\\
+        \gamma
+    \end{aligned}
+\right)
+\cdot
+\left(
+    \begin{aligned}
+        - \frac{\lambda}{2}\\
+        \lambda \mu\\
+        -\frac{1}{2}\lambda \mu ^ \mathrm{T} \mu + \frac{D}{2} \ln \lambda
+    \end{aligned}
+\right)
+- \frac{D}{2}\ln2\pi \\
+&+ \frac{D\gamma + 2}{2}\ln\gamma
++ \frac{D\gamma-D+2}{2}\ln \nu
+ - \ln\Gamma\frac{D\gamma -D + 2}{2}\\
+& = \ln\textbf{N}(x|\upsilon, (\gamma \lambda I)^{-1}) \textbf{Gamma}(\lambda | \frac{D \gamma - D + 2}{2}, \lambda \nu)
+\end{aligned}
+$$
+
+$$
+\Phi = \frac{D}{2}\ln2\pi
+    - \frac{D\gamma + 2}{2}\ln\gamma
+    - \frac{D\gamma-D+2}{2}\ln \nu
+    + \ln\Gamma\frac{D\gamma -D + 2}{2}
+$$
+$$
+\begin{aligned}
+b = \gamma \upsilon\\
+c = \gamma(\upsilon^\textbf{T}\upsilon + 2\nu)\\
+\end{aligned}
+$$
+$$
+\Phi = \frac{D}{2}\ln2\pi - \frac{D\gamma + 2}{2}\ln\gamma - \frac{D\lambda-D+2}{2}\ln(\frac{c}{2\gamma} - \frac{b^\textbf{T}b}{2\gamma^2}) + \ln\Gamma\frac{D\gamma-D+2}{2}
+$$
+$$
+\begin{aligned}
+\textbf{E}[-\frac{1}{2}\mu^\textbf{T}\mu + \frac{D}{2}\ln \lambda]
+    &= \frac{\partial\Phi}{\partial\gamma} = -\frac{D}{2}\ln\gamma\nu
+    - \frac{D\gamma-D+2}{2}\frac{\upsilon^\textbf{T}\upsilon}{2\nu\gamma} -\frac{D}{2\gamma}+\frac{D}{2}\psi(\frac{D\gamma-D+2}{2})\\
+\textbf{E}[\gamma\upsilon]
+    &= \frac{\partial\Phi}{\partial b}
+    = \frac{D\gamma-D+2}{2}\frac{\upsilon}{\gamma\nu}\\
+\textbf{E}[-\frac{\lambda}{2}]
+    &= \frac{\partial\Phi}{\partial c} = -\frac{D\gamma-D+2}{2}\frac{1}{2\nu\gamma}
+\end{aligned}
+$$
+
+
+
+\section{diagonal mode}
+$$
+\begin{aligned}
+\ln P(x)& =
+\left(
+    \begin{aligned}
+        - \frac{\lambda}{2}\\
+        \lambda \mu
+    \end{aligned}
+\right)
+\cdot
+\left(
+    \begin{aligned}
+        xx\\
+        x
+    \end{aligned}
+\right) -\frac{1}{2}\lambda ^ \mathrm{T} (\mu \mu) + \sum_{i=1}^{D}\frac{1}{2} \ln \lambda_i - \frac{D}{2} \ln2\pi \\
+& = \ln\prod_{i=1}^{D}\textbf{N}(x_i|\mu_i,\lambda_i^{-1})
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\ln P(\mu,\lambda | \gamma, \nu, b) &=
+\left(
+    \begin{aligned}
+        \gamma(\upsilon\upsilon + 2\nu)\\
+        \gamma \upsilon\\
+        \gamma
+    \end{aligned}
+\right)
+\cdot
+\left(
+    \begin{aligned}
+        - \frac{\lambda}{2}\\
+        \lambda \mu\\
+        -\frac{1}{2}\lambda ^ \mathrm{T} (\mu \mu) + \sum_{i=1}^{D}\frac{1}{2} \ln \lambda_i
+    \end{aligned}
+\right)
+- \frac{D}{2}\ln2\pi\\
+&+ \frac{D}{2}\ln\gamma
++ \sum_{i=1}^{D}\frac{\gamma+2}{2}\ln \gamma b_i
+- D\ln\Gamma\frac{\gamma + 2}{2}\\
+&= \ln\prod_{i=1}^{D}\textbf{N}(x|\upsilon_i, (\gamma_i \lambda_i)^{-1}) \textbf{Gamma}(\lambda_i | \frac{\gamma + 2}{2}, \gamma\nu_i)\\
+c
+    &= \gamma(\upsilon\upsilon + 2\nu)\\
+b   &= \gamma\upsilon\\
+\textbf{E}[{-\frac{1}{2}\lambda_i}]
+    &= \frac{\partial\Psi}{\partial c} = -\frac{\gamma + 2}{2}\frac{1}{2\gamma\nu_i}\\
+\textbf{E}[{\lambda \mu_i}]
+    &= \frac{\partial\Psi}{\partial b} = \frac{\gamma + 2}{2}\frac{\upsilon_i}{\gamma\nu_i}\\
+\textbf{E}[{-\frac{1}{2}\lambda ^ \mathrm{T} (\mu \mu) + \sum_{i=1}^{D}\frac{1}{2} \ln \lambda_i}]
+    &= \frac{\partial\Psi}{\partial \gamma} = \frac{D}{2} \psi(\frac{a + 2}{2}) - \frac{D}{2\gamma} - \sum_{i=1}^{D}(\frac{1}{2}\ln\gamma\nu_i + \frac{a+2}{2}\frac{\upsilon_i^2}{2\gamma\nu_i}
+\end{aligned}
+$$
+
+\section{full mode}
+$$
+\begin{aligned}
+\ln P(x)& =
+\left(
+    \begin{aligned}
+        - \frac{\Lambda}{2}\\
+        \Lambda \mu
+    \end{aligned}
+\right)
+\cdot
+\left(
+    \begin{aligned}
+        xx^\mathrm{T}\\
+        x
+    \end{aligned}
+\right) -\frac{1}{2}\mu ^ \mathrm{T} \Lambda \mu + \frac{D}{2} \ln |\Lambda| - \frac{D}{2} \ln2\pi \\
+& = \ln\textbf{N}(x|\mu,\Lambda^{-1})
+\end{aligned}
+$$
+
+$$
+\begin{aligned}
+\ln P(\mu,\Lambda | \gamma, \nu, \Delta) &= 
+\left(
+    \begin{aligned}
+        \gamma(\Delta^{-1} + \upsilon\upsilon^\textbf{T})\\
+        \gamma \upsilon\\
+        \gamma
+    \end{aligned}
+\right)
+\cdot
+\left(
+    \begin{aligned}
+        - \frac{\Lambda}{2}\\
+        \Lambda \mu\\
+        -\frac{1}{2}\mu ^ \mathrm{T} \Lambda\mu + \frac{D}{2} \ln |\Lambda|
+    \end{aligned}
+\right) -\frac{D}{2}\ln|\Lambda| - \Psi\\
+    &= \ln(\textbf{N}(x|\mu, (\gamma\Lambda)^{-1})\textbf{Wishart}(\Lambda|\Delta,\gamma))\\
+\Psi &= \frac{\gamma}{2}\ln|\Delta|-\frac{D}{2}\ln\frac{\gamma}{2\pi} - \frac{\gamma D}{2}\ln\frac{\gamma}{2} 
+    + \frac{D(D-1)}{4}\ln\pi + \sum_{i=1}^{D}\ln\Gamma(\frac{\gamma+1-i}{2})
+\end{aligned}
+$$
+$$
+\begin{aligned}
+b 
+    &= \gamma\upsilon\\
+C 
+    &= \gamma(\Delta^{-1}+\upsilon\upsilon^\textbf{T})\\
+\Psi(\gamma, b, C) 
+    &= -\frac{D}{2}\ln|\frac{\gamma}{2\pi}| - \frac{\gamma}{2}\ln(\frac{1}{\gamma}C-\frac{1}{\gamma^2}bb^\textbf{T}) - \frac{D\gamma}{2}\ln\frac{\gamma}{2}\\
+    &+\frac{D(D-1)}{4}\ln\pi + \sum_{i=1}^{D}\ln\Gamma(\frac{\gamma+1-i}{2})\\
+\textbf{E}[-\frac{\Lambda}{2}]
+    &= \frac{\partial\Psi}{\partial C} = -\frac{1}{2}\Delta\\
+\textbf{E}[\Lambda\mu]
+    &= \frac{\partial\Psi}{\partial b} = \Delta\upsilon\\
+\textbf{E}[-\frac{1}{2}\mu^\textbf{T}\Lambda\mu+\frac{1}{2}\ln|\Lambda|]
+    &= \frac{\partial\Psi}{\partial \gamma} = \frac{1}{2}\ln|\Delta| -\upsilon^\textbf{T}\Delta\upsilon-\frac{D}{2}\ln\frac{\gamma}{2}-\frac{D}{2\gamma}+\frac{1}{2}\sum^D_{i=1}\Psi(\frac{\gamma+1-i}{2})  \\
+\end{aligned}
+$$
+
+
+\section{delete}
+%%%%
+$$
+\begin{aligned}
+\ln P(u,\lambda | \gamma, \nu, b) =
+&\left(
+    \begin{aligned}
+        \gamma\nu^\mathrm{T}\nu + 2b\\
+        \gamma \nu\\
+        \gamma
+    \end{aligned}
+\right)
+\cdot
+\left(
+    \begin{aligned}
+        - \frac{\lambda}{2}\\
+        \lambda u\\
+        -\frac{1}{2}\lambda u ^ \mathrm{T} u + \frac{D}{2} \ln \lambda
+    \end{aligned}
+\right)
+- \frac{D}{2}\ln2\pi \\
+&+ \frac{D}{2}\ln\gamma - b\lambda + \frac{Da-D+2}{2}\ln b - \ln\Gamma\frac{Da -D + 2}{2}\\
+& = \textbf{N}(x|\nu, (\gamma \lambda I)^{-1}) \textbf{Gamma}(\lambda | \frac{D \gamma - D + 2}{2}, b)
+\end{aligned}
+$$
+
+\bibliographystyle{unsrt}
+\bibliography{ref}
+\end{CJK*}
+\end{document}
+
