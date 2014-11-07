@@ -136,19 +136,25 @@ $$
     \end{aligned}
 \right)
 - \frac{D}{2}\ln2\pi\\
-&+ \frac{D}{2}\ln\gamma
-+ \sum_{i=1}^{D}\frac{\gamma+2}{2}\ln \gamma b_i
+&+ \sum_{i=1}^{D}\frac{1}{2}\ln\gamma\lambda_i
++ \sum_{i=1}^{D}\frac{\gamma+2}{2}\ln \gamma \nu_i
 - D\ln\Gamma\frac{\gamma + 2}{2}\\
-&= \ln\prod_{i=1}^{D}\textbf{N}(x|\upsilon_i, (\gamma_i \lambda_i)^{-1}) \textbf{Gamma}(\lambda_i | \frac{\gamma + 2}{2}, \gamma\nu_i)\\
+&= \ln\prod_{i=1}^{D}\textbf{N}(\mu_i|\upsilon_i, (\gamma \lambda_i)^{-1}) \textbf{Gamma}(\lambda_i | \frac{\gamma + 2}{2}, \gamma\nu_i)\\
+\Phi
+    &= -\sum_{i=1}^{D}\frac{1}{2}\ln\gamma\lambda_i
+    - \sum_{i=1}^{D}\frac{\gamma+2}{2}\ln \gamma \nu_i
+    + D\ln\Gamma\frac{\gamma + 2}{2}\\
+\Phi(\gamma, b, c)
+    &= -\frac{1}{2}\sum_{i=1}^{D}\ln\gamma\lambda_i - \sum_{i=1}^{D}\frac{\gamma+2}{2}\ln(\frac{c_i}{2}-\frac{b_i^2}{2\gamma})+D\ln\Gamma\frac{\gamma+2}{2}\\
 c
     &= \gamma(\upsilon\upsilon + 2\nu)\\
 b   &= \gamma\upsilon\\
 \textbf{E}[{-\frac{1}{2}\lambda_i}]
-    &= \frac{\partial\Psi}{\partial c} = -\frac{\gamma + 2}{2}\frac{1}{2\gamma\nu_i}\\
+    &= \frac{\partial\Psi}{\partial c_i} = -\frac{\gamma + 2}{2}\frac{1}{2\gamma\nu_i}\\
 \textbf{E}[{\lambda \mu_i}]
-    &= \frac{\partial\Psi}{\partial b} = \frac{\gamma + 2}{2}\frac{\upsilon_i}{\gamma\nu_i}\\
+    &= \frac{\partial\Psi}{\partial b_i} = \frac{\gamma + 2}{2}\frac{\upsilon_i}{\gamma\nu_i}\\
 \textbf{E}[{-\frac{1}{2}\lambda ^ \mathrm{T} (\mu \mu) + \sum_{i=1}^{D}\frac{1}{2} \ln \lambda_i}]
-    &= \frac{\partial\Psi}{\partial \gamma} = \frac{D}{2} \psi(\frac{a + 2}{2}) - \frac{D}{2\gamma} - \sum_{i=1}^{D}(\frac{1}{2}\ln\gamma\nu_i + \frac{a+2}{2}\frac{\upsilon_i^2}{2\gamma\nu_i}
+    &= \frac{\partial\Psi}{\partial \gamma} = \frac{D}{2} \psi(\frac{\gamma + 2}{2}) - \frac{D}{2\gamma} - \sum_{i=1}^{D}(\frac{1}{2}\ln\gamma\nu_i + \frac{\gamma+2}{2}\frac{\upsilon_i^2}{2\gamma\nu_i})
 \end{aligned}
 $$
 
@@ -175,7 +181,7 @@ $$
 
 $$
 \begin{aligned}
-\ln P(\mu,\Lambda | \gamma, \nu, \Delta) &= 
+\ln P(\mu,\Lambda | \gamma, \nu, \Delta) &=
 \left(
     \begin{aligned}
         \gamma(\Delta^{-1} + \upsilon\upsilon^\textbf{T})\\
@@ -192,17 +198,17 @@ $$
     \end{aligned}
 \right) -\frac{D}{2}\ln|\Lambda| - \Psi\\
     &= \ln(\textbf{N}(x|\mu, (\gamma\Lambda)^{-1})\textbf{Wishart}(\Lambda|\Delta,\gamma))\\
-\Psi &= \frac{\gamma}{2}\ln|\Delta|-\frac{D}{2}\ln\frac{\gamma}{2\pi} - \frac{\gamma D}{2}\ln\frac{\gamma}{2} 
+\Psi &= \frac{\gamma}{2}\ln|\Delta|-\frac{D}{2}\ln\frac{\gamma}{2\pi} - \frac{\gamma D}{2}\ln\frac{\gamma}{2}
     + \frac{D(D-1)}{4}\ln\pi + \sum_{i=1}^{D}\ln\Gamma(\frac{\gamma+1-i}{2})
 \end{aligned}
 $$
 $$
 \begin{aligned}
-b 
+b
     &= \gamma\upsilon\\
-C 
+C
     &= \gamma(\Delta^{-1}+\upsilon\upsilon^\textbf{T})\\
-\Psi(\gamma, b, C) 
+\Psi(\gamma, b, C)
     &= -\frac{D}{2}\ln|\frac{\gamma}{2\pi}| - \frac{\gamma}{2}\ln(\frac{1}{\gamma}C-\frac{1}{\gamma^2}bb^\textbf{T}) - \frac{D\gamma}{2}\ln\frac{\gamma}{2}\\
     &+\frac{D(D-1)}{4}\ln\pi + \sum_{i=1}^{D}\ln\Gamma(\frac{\gamma+1-i}{2})\\
 \textbf{E}[-\frac{\Lambda}{2}]
@@ -214,35 +220,7 @@ C
 \end{aligned}
 $$
 
-
-\section{delete}
-%%%%
-$$
-\begin{aligned}
-\ln P(u,\lambda | \gamma, \nu, b) =
-&\left(
-    \begin{aligned}
-        \gamma\nu^\mathrm{T}\nu + 2b\\
-        \gamma \nu\\
-        \gamma
-    \end{aligned}
-\right)
-\cdot
-\left(
-    \begin{aligned}
-        - \frac{\lambda}{2}\\
-        \lambda u\\
-        -\frac{1}{2}\lambda u ^ \mathrm{T} u + \frac{D}{2} \ln \lambda
-    \end{aligned}
-\right)
-- \frac{D}{2}\ln2\pi \\
-&+ \frac{D}{2}\ln\gamma - b\lambda + \frac{Da-D+2}{2}\ln b - \ln\Gamma\frac{Da -D + 2}{2}\\
-& = \textbf{N}(x|\nu, (\gamma \lambda I)^{-1}) \textbf{Gamma}(\lambda | \frac{D \gamma - D + 2}{2}, b)
-\end{aligned}
-$$
-
 \bibliographystyle{unsrt}
 \bibliography{ref}
 \end{CJK*}
 \end{document}
-
