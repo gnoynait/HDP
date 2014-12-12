@@ -8,7 +8,6 @@ import onlinedpgmm
 
 import time
 
-meanchangethresh = 0.00001
 #random_seed = 999931111
 random_seed = int(time.time())
 np.random.seed(random_seed)
@@ -36,7 +35,7 @@ def gen_cops(means, precis, batch_size, cop_size):
         cops.append(gen_data(means, precis, cop_size))
     return cops
 
-def test_hdp():
+def test_hdp_1():
     T = 100
     K = 40 
     topics = 10
@@ -52,7 +51,6 @@ def test_hdp():
     hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
     var_converge = 0.00001
 
-    cop_size = 1000
     batch_size = 1
     means, precis = gen_parameter(dim, topics)
     data = gen_data(means, precis, cop_size)
@@ -75,11 +73,40 @@ def test_hdp():
     print hdp.m_precis[weight > thresh]
     hdp.save_model(model)
     model.close()
-"""
-def test():
-    means, precis = gen_parameter(2, 10)
-    data = gen_data(means, precis, 1000) 
-    return data
-"""
 
-test_hdp()
+def test_hdp_2():
+    T = 40
+    K = 40 
+    D = 100
+    alpha = 0.5 
+    gamma = 1 
+    kappa = 0.9
+    tau = 1
+    dim = 2
+    total = 500000
+    mode = 'diagonal'
+    #mode = 'full'
+    hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
+    var_converge = 0.00001
+
+    mean = np.array(  [[0.0, 0.0],
+                        [3.0, 3.0],
+                        [-3.0, 3.0],
+                        [-3.0, -3.0],
+                        [3.0, -3.0]])
+    cov = np.zeros((5, 2, 2))
+    cov += np.array(    [[1.0, 0.0],
+                         [0.0, 2.0]])
+    weight = np.array([[0.2, 0.2, 0.6, 0.0, 0.0],
+                       [0.0, 0.5, 0.0, 0.5, 0.0],
+                       [0.0, 0.0, 0.0, 0.0, 1.0],
+                       [0.3, 0.1, 0.3, 0.2, 0.1],
+                       [0.1, 0.0, 0.2, 0.3, 0.4]])
+    groups = map(lambda m, w: onlinedpgmm.Group(alpha, 1000, onlinedpgmm.RandomGaussMixtureData(w, m, cov)),mean, weight)
+                        
+    for i in range(D):
+        hdp.process_groups(groups)
+    for group in groups:
+        group.report()
+
+test_hdp_2()

@@ -159,7 +159,7 @@ def show_grid():
     X = np.array([0, 0], dtype = 'float64')
 
     for i in range(D):
-        print i
+        #print i
         cops = [gen_grid_data(batch_size), gen_grid_data(batch_size),
             gen_grid_data(batch_size),gen_grid_data(batch_size)]
         dp.process_documents(cops)
@@ -247,6 +247,6 @@ def show_comp():
 
     plt.show()
 
-#show_cosine()
-#show_grid()
+show_cosine()
+show_grid()
 show_comp()
