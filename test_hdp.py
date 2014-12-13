@@ -5,6 +5,10 @@ from numpy.random import gamma
 from numpy.random import dirichlet
 from numpy.random import multinomial
 import onlinedpgmm
+import itertools
+from scipy import linalg
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 import time
 
@@ -109,4 +113,81 @@ def test_hdp_2():
     for group in groups:
         group.report()
 
-test_hdp_2()
+def plot(axis, model, X, title, lim = None, show = 'md'):
+    color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k'])
+    Y_ = model.predict(X)
+    for i, (mean, cov, col) in enumerate(zip(
+            model.m_means, model.get_cov(), color_iter)):
+        v, w = linalg.eigh(cov)
+        u = w[0] / linalg.norm(w[0])
+        if not np.any(Y_ == i):
+            continue
+        if 'd' in show:
+            axis.scatter(X[Y_ == i, 0], X[Y_ == i, 1], .8, color=col)
+        if 'm' in show:
+            angle = np.arctan(u[1] / (u[0] + np.finfo(np.float32).eps))
+            angle = 180 * angle / np.pi  # convert to degrees
+            ell = mpl.patches.Ellipse(mean, v[0], v[1], 180 + angle, color=col)
+            ell.set_clip_box(axis.bbox)
+            ell.set_alpha(0.5)
+            axis.add_artist(ell)
+    if lim is not None:
+        plt.xlim(lim[0], lim[1])
+        plt.ylim(lim[2], lim[3])
+    plt.title(title)
+    plt.xticks(())
+    plt.yticks(())
+
+def show_grid():
+    np.random.seed(random_seed)
+    T = 80
+    K = 10
+    alpha = 0.5
+    D = 1000
+    mode = 'spherical'
+    batch_size = 100
+    gamma = 2
+    #dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
+    gamma = 10
+    # ---------------------------------------
+    T = 20
+    K = 20 
+    D = 1000
+    alpha = 0.5 
+    gamma = 1 
+    kappa = 0.9
+    tau = 1
+    dim = 2
+    total = 500000
+    mode = 'diagonal'
+    #mode = 'full'
+    var_converge = 0.00001
+    hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
+    X = np.array([0, 0], dtype = 'float64')
+
+    mean = np.array(  [[0.0, 0.0],
+                        [3.0, 3.0],
+                        [-3.0, 3.0],
+                        [-3.0, -3.0],
+                        [3.0, -3.0]])
+    cov = np.zeros((5, 2, 2))
+    cov += np.array(    [[1.0, 0.0],
+                         [0.0, 2.0]])
+    weight = np.array([[0.2, 0.2, 0.6, 0.0, 0.0],
+                       [0.0, 0.5, 0.0, 0.5, 0.0],
+                       [0.0, 0.0, 0.0, 0.0, 1.0],
+                       [0.3, 0.1, 0.3, 0.2, 0.1],
+                       [0.1, 0.0, 0.2, 0.3, 0.4]])
+    groups = map(lambda w: onlinedpgmm.Group(alpha, 1000, onlinedpgmm.RandomGaussMixtureData(w, mean, cov)), weight)
+                        
+    for i in range(5000):
+        hdp.process_groups(groups)
+    for g in groups:
+        X = np.vstack((X, g.data.sample(200)))
+    lim = [-10, 10, -10, 10]
+    #plot(plt.subplot(221), dp, X, 'DP', lim, 'd')
+    #plot(plt.subplot(222), dp, X, 'DP', lim, 'm')
+    plot(plt.subplot(223), hdp, X, 'HDP', lim, 'd')
+    plot(plt.subplot(224), hdp, X, 'HDP', lim, 'm')
+    plt.show()
+show_grid()

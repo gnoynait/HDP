@@ -418,7 +418,7 @@ class online_hdp(online_dp):
         ## batch_size = m_rel.sum()
         ## TODO fix batch_size
         size = 1000
-        batch_size = 50
+        batch_size = 500
         #for c in groups:
             #size += c.shape[0]
         ss = suff_stats(self.m_T, self.m_dim, size, self.mode) 
