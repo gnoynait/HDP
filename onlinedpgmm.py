@@ -142,12 +142,20 @@ class RandomGaussMixtureData(Data):
         self.cov = cov
     def next(self):
         c = np.random.choice(len(self.weight), p = self.weight)
-        return np.random.multivariate_normal(mean[c], cov[c])
+        return np.random.multivariate_normal(self.mean[c], self.cov[c])
     def sample(self, n):
-        c = np.random.choice(len(self.weight), p = self.weight, size = n)
-        sample = map(lambda x: np.random.multivariate_normal(self.mean[x],
-            self.cov[x]), c)
-        return np.array(sample)
+        #c = np.random.choice(len(self.weight), p = self.weight, size = n)
+        #smpl = map(lambda x: np.random.multivariate_normal(self.mean[x],
+        #    self.cov[x]), c)
+        count = np.random.multinomial(n, self.weight)
+        data = np.zeros((n, self.mean.shape[1]))
+        start = 0
+        for i in range(len(count)):
+            data[start: start + count[i], :] = np.random.multivariate_normal(self.mean[i], self.cov[i], count[i])
+            start = start + count[i]
+        s = np.arange(n)
+        np.random.shuffle(s)
+        return data[s]
 
 
 class online_dp:
@@ -380,14 +388,14 @@ class Group:
         #v[1] = alpha
         #self.m_v = v
         self.m_v = None # 2 * (K - 1) array
-        self.var_phi = None # K * T array
+        self.m_var_phi = None # K * T array
         self.size = size # don't need to be the same the data
         self.data = data
         self.update_timect = 0 # times of updating parameter
     def report(self):
-        weight = expect_log_sticks(self.m_v)
-        print 'weight:' + ' '.join(weight)
-        print 'varphi:' + ' '.join(self.var_phi)
+        weight = np.exp(expect_log_sticks(self.m_v))
+        print 'weight:' , weight
+        print 'varphi:' , self.m_var_phi
         
 class online_hdp(online_dp):
     ''' hdp model using stick breaking'''
@@ -420,8 +428,10 @@ class online_hdp(online_dp):
         for group in groups:
             if group.update_timect == 0:
                 ## first time for this group
+                #debug('init group')
                 score += self.init_group(group, ss, Elogsticks_1st, batch_size)
             else:
+                #debug('process_group')
                 score += self.process_group(group, ss, Elogsticks_1st, batch_size)
         self.update_model(ss)
         return score
@@ -446,7 +456,8 @@ class online_hdp(online_dp):
         iter = 0
         
         Eloggauss = self.E_log_gauss(X)
-        var_phi = np.array()
+        # del var_phi
+        #var_phi = None
         while iter < 10 or (iter < max_iter and (converge <= 0.0 or converge > var_converge)):
         #while iter < max_iter:
             ### update variational parameters
@@ -509,6 +520,7 @@ class online_hdp(online_dp):
         # update the suff_stat ss 
         group.m_v = v
         group.m_var_phi = var_phi
+        group.update_timect += 1
         z = np.dot(phi, var_phi) 
         self.add_to_sstats(var_phi, z, X, ss)
         return likelihood

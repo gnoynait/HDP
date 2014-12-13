@@ -75,9 +75,9 @@ def test_hdp_1():
     model.close()
 
 def test_hdp_2():
-    T = 40
-    K = 40 
-    D = 100
+    T = 20
+    K = 20 
+    D = 1000
     alpha = 0.5 
     gamma = 1 
     kappa = 0.9
@@ -102,7 +102,7 @@ def test_hdp_2():
                        [0.0, 0.0, 0.0, 0.0, 1.0],
                        [0.3, 0.1, 0.3, 0.2, 0.1],
                        [0.1, 0.0, 0.2, 0.3, 0.4]])
-    groups = map(lambda m, w: onlinedpgmm.Group(alpha, 1000, onlinedpgmm.RandomGaussMixtureData(w, m, cov)),mean, weight)
+    groups = map(lambda w: onlinedpgmm.Group(alpha, 1000, onlinedpgmm.RandomGaussMixtureData(w, mean, cov)), weight)
                         
     for i in range(D):
         hdp.process_groups(groups)
