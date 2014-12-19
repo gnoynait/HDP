@@ -3,7 +3,6 @@ import scipy.special as sp
 from scipy import linalg
 import os, sys, math, time
 import utils
-from corpus import document, corpus
 from scipy.spatial import distance
 from itertools import izip
 import random
@@ -326,6 +325,7 @@ class online_dp:
         Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
         res = self.E_log_gauss(X) + Elogsticks_1st
         return res.argmax(axis=1)
+
     def E_log_gauss(self, X):
         ds = self.diff_square(X)
         return -0.5 * ds + self.m_const[np.newaxis]
@@ -351,11 +351,11 @@ class online_dp:
     def update_model(self, sstats):
         # rhot will be between 0 and 1, and says how much to weight
         # the information we got from this mini-batch.
+
         rhot = pow(self.m_tau + self.m_updatect, -self.m_kappa)
         if rhot < rhot_bound: 
             rhot = rhot_bound
         self.m_rhot = rhot
-
         self.m_updatect += 1
 
         scale = self.m_total / sstats.m_batchsize
@@ -391,7 +391,7 @@ class Group:
         self.m_var_phi = None # K * T array
         self.size = size # don't need to be the same the data
         self.data = data
-        self.update_timect = 0 # times of updating parameter
+        self.update_timect = -10 # times of updating parameter
     def report(self):
         weight = np.exp(expect_log_sticks(self.m_v))
         print 'weight:' , weight
@@ -426,7 +426,7 @@ class online_hdp(online_dp):
 
         score = 0.0
         for group in groups:
-            if group.update_timect == 0:
+            if group.update_timect <= 0:
                 ## first time for this group
                 #debug('init group')
                 score += self.init_group(group, ss, Elogsticks_1st, batch_size)
@@ -524,6 +524,21 @@ class online_hdp(online_dp):
         z = np.dot(phi, var_phi) 
         self.add_to_sstats(var_phi, z, X, ss)
         return likelihood
+
+    def predict(self, X, group = None):
+        if group is None:
+            Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
+            res = self.E_log_gauss(X) + Elogsticks_1st
+            return res.argmax(axis=1)
+
+        # The following line is of no use.
+        Elogsticks_2nd = expect_log_sticks(group.m_v)
+        Esticks = np.exp(Elogsticks_2nd)
+        weight = np.sum(Esticks[:,np.newaxis] * group.m_var_phi, axis = 0)
+        logweight = np.log(weight)
+        logpost = self.E_log_gauss(X) + logweight[np.newaxis,:]
+        return logpost.argmax(axis=1)
+
 
     def process_group(self, group, ss, Elogsticks_1st, batch_size):
         X = group.data.sample(batch_size)

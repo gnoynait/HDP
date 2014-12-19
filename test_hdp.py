@@ -113,7 +113,7 @@ def test_hdp_2():
     for group in groups:
         group.report()
 
-def plot(axis, model, X, title, lim = None, show = 'md'):
+def plot(axis, model, X, Y_, title, lim = None, show = 'md'):
     color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k'])
     Y_ = model.predict(X)
     for i, (mean, cov, col) in enumerate(zip(
@@ -144,7 +144,6 @@ def show_grid():
     K = 10
     alpha = 0.5
     D = 1000
-    mode = 'spherical'
     batch_size = 100
     gamma = 2
     #dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
@@ -153,24 +152,23 @@ def show_grid():
     T = 20
     K = 20 
     D = 1000
-    alpha = 0.5 
-    gamma = 1 
-    kappa = 0.9
+    alpha = 0.1 
+    gamma = 0.5 
+    kappa = 0.6
     tau = 1
     dim = 2
     total = 500000
-    mode = 'diagonal'
+    mode = 'spherical'
+    #mode = 'diagonal'
     #mode = 'full'
     var_converge = 0.00001
     hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
-    X = np.array([0, 0], dtype = 'float64')
 
-    mean = np.array(  [[0.0, 0.0],
-                        [3.0, 3.0],
+    mean = np.array(  [ [3.0, 3.0],
                         [-3.0, 3.0],
                         [-3.0, -3.0],
                         [3.0, -3.0]])
-    cov = np.zeros((5, 2, 2))
+    cov = np.zeros((4, 2, 2))
     cov += np.array(    [[1.0, 0.0],
                          [0.0, 2.0]])
     weight = np.array([[0.2, 0.2, 0.6, 0.0, 0.0],
@@ -178,16 +176,27 @@ def show_grid():
                        [0.0, 0.0, 0.0, 0.0, 1.0],
                        [0.3, 0.1, 0.3, 0.2, 0.1],
                        [0.1, 0.0, 0.2, 0.3, 0.4]])
+    weight = np.array([ [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                        [0.25, 0.25, 0.25, 0.25]])
     groups = map(lambda w: onlinedpgmm.Group(alpha, 1000, onlinedpgmm.RandomGaussMixtureData(w, mean, cov)), weight)
                         
     for i in range(5000):
         hdp.process_groups(groups)
+    X = []
+    Y = []
     for g in groups:
-        X = np.vstack((X, g.data.sample(200)))
+        sample = g.data.sample(200)
+        X.append(sample)
+        Y.append(hdp.predict(sample, group = g))
+    X = np.vstack(X)
+    Y = np.vstack(Y)
     lim = [-10, 10, -10, 10]
     #plot(plt.subplot(221), dp, X, 'DP', lim, 'd')
     #plot(plt.subplot(222), dp, X, 'DP', lim, 'm')
-    plot(plt.subplot(223), hdp, X, 'HDP', lim, 'd')
-    plot(plt.subplot(224), hdp, X, 'HDP', lim, 'm')
+    plot(plt.subplot(223), hdp, X, Y, 'HDP', lim, 'd')
+    plot(plt.subplot(224), hdp, X, Y, 'HDP', lim, 'm')
     plt.show()
 show_grid()
