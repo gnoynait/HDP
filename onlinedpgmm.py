@@ -526,8 +526,8 @@ class online_hdp(online_dp):
         return likelihood
 
     def predict(self, X, group = None):
+        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
         if group is None:
-            Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
             res = self.E_log_gauss(X) + Elogsticks_1st
             return res.argmax(axis=1)
 
@@ -538,7 +538,6 @@ class online_hdp(online_dp):
         logweight = np.log(weight)
         logpost = self.E_log_gauss(X) + logweight[np.newaxis,:]
         return logpost.argmax(axis=1)
-
 
     def process_group(self, group, ss, Elogsticks_1st, batch_size):
         X = group.data.sample(batch_size)
