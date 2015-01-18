@@ -140,34 +140,28 @@ def plot(axis, model, X, Y_, title, lim = None, show = 'md'):
 
 def show_grid():
     np.random.seed(random_seed)
-    T = 80
-    K = 10
-    alpha = 0.5
-    D = 1000
-    batch_size = 100
-    gamma = 2
-    #dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
-    gamma = 10
-    # ---------------------------------------
     T = 20
     K = 20 
-    D = 1000
-    alpha = 0.5 
+    D = 100000
+    batch_size = 100
+    process_round = 50
+
     gamma = 0.5 
-    kappa = 0.6
+    alpha = 0.5 
+    kappa = 0.7
     tau = 1
     dim = 2
-    total = 500000
+    var_converge = 0.00001
+    total = 5000000
     mode = 'spherical'
     #mode = 'diagonal'
     #mode = 'full'
-    var_converge = 0.00001
     hdp = onlinedpgmm.online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
 
-    mean = np.array(  [ [3.0, 3.0],
-                        [-3.0, 3.0],
-                        [-3.0, -3.0],
-                        [3.0, -3.0]])
+    mean = np.array(  [ [4.0, 4.0],
+                        [-4.0, 4.0],
+                        [-4.0, -4.0],
+                        [4.0, -4.0]])
     cov = np.zeros((4, 2, 2))
     cov += np.array(    [[1.0, 0.0],
                          [0.0, 1.0]])
@@ -177,13 +171,15 @@ def show_grid():
                        [0.3, 0.1, 0.3, 0.2, 0.1],
                        [0.1, 0.0, 0.2, 0.3, 0.4]])
     weight = np.array([ [0.5, 0.5, 0.0, 0.0],
-                        [0.0, 0.0, 0.5, 0.5],
                         [0.5, 0.0, 0.5, 0.0],
-                        [0.0, 0.5, 0.0, 0.5]])
+                        [0.5, 0.0, 0.0, 0.5],
+                        [0.0, 0.5, 0.5, 0.0],
+                        [0.0, 0.5, 0.0, 0.5],
+                        [0.0, 0.0, 0.5, 0.5]])
                         #[0.25, 0.25, 0.25, 0.25]])
     groups = map(lambda w: onlinedpgmm.Group(alpha, 1000, onlinedpgmm.RandomGaussMixtureData(w, mean, cov)), weight)
                         
-    for i in range(5000):
+    for i in range(process_round):
         hdp.process_groups(groups)
     X = []
     Y = []

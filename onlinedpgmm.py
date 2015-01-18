@@ -8,7 +8,6 @@ from itertools import izip
 import random
 import cPickle
 from sklearn import cluster
-from scipy.special import digamma as _digamma, gammaln as _gammaln
 import time
 import sys
 
@@ -17,6 +16,7 @@ random_seed = int(time.time())
 np.random.seed(random_seed)
 random.seed(random_seed)
 
+## smallest rhot
 rhot_bound = 0.0
 
 def debug(*W):
@@ -26,7 +26,6 @@ def debug(*W):
 
 def log_normalize(v):
     ''' return log(sum(exp(v)))'''
-
     log_max = 100.0
     if len(v.shape) == 1:
         max_val = np.max(v)
@@ -43,9 +42,6 @@ def log_normalize(v):
         v = v - log_norm[:,np.newaxis]
 
     return (v, log_norm)
-
-def digamma(x):
-    return _digamma(x + np.finfo(np.float32).eps)
 
 def expect_log_sticks(sticks):
     """
@@ -156,20 +152,25 @@ class RandomGaussMixtureData(Data):
         np.random.shuffle(s)
         return data[s]
 
-
 class online_dp:
     ''' hdp model using stick breaking'''
     def __init__(self, T, gamma, kappa, tau, total, dim, mode):
-        """
+        """ T: top level truncation level
         gamma: first level concentration
-        T: top level truncation level
         kappa: learning rate
         tau: slow down parameter
         total: total number of data
+        dim: dimensionality of vector
+        mode: covarance matrix mode
         """
         self.m_T = T # Top level truncation
         self.m_gamma = gamma # first level truncation
         self.m_total = total # total ponits
+
+        ## for online learning
+        self.m_tau = tau
+        self.m_kappa = kappa
+        self.m_updatect = 0 # update count
 
         ## each column is the top level topic's beta distribution para
         self.m_var_sticks = np.zeros((2, T-1))
@@ -201,15 +202,11 @@ class online_dp:
             cov = np.ones(self.m_T)
             self.m_precis = np.ones(self.m_T)
         else:
-            print 'unkown mode'
+            print 'unknown mode'
             sys.exit()
         x2, x1 = self.par_to_natual(cov, self.m_means, self.m_rel)
         self.natual_to_par(x2, x1, self.m_rel)
 
-        ## for online learning
-        self.m_tau = tau + 1
-        self.m_kappa = kappa
-        self.m_updatect = 0 
 
     def get_cov(self):
         cov = np.empty((self.m_T, self.m_dim, self.m_dim), dtype = 'float64')
@@ -223,34 +220,34 @@ class online_dp:
             for t in range(self.m_T):
                 cov[t] = np.eye(self.m_dim) / self.m_precis[t]
         else:
-            print 'unkonw mode'
+            print 'unknown mode'
         return cov
 
     def natual_to_par(self, x2, x, r):
         self.m_var_x = x
-        mean = x / r[:, np.newaxis]
-        self.m_means[:] = mean
+        self.m_means = x / r[:, np.newaxis]
         if self.mode == 'full':
             cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
             for t in range(self.m_T):
                 self.m_precis[t] = linalg.inv(cov[t])
-                self.m_const[t] = 0.5 * (linalg.det(self.m_precis[t]) + np.sum(digamma(0.5 * (self.m_rel[t] - np.arange(self.m_dim)))))
+                self.m_const[t] = 0.5 * (linalg.det(self.m_precis[t]) + np.sum(sp.psi(0.5 * (self.m_rel[t] - np.arange(self.m_dim)))))
             self.m_const -= 0.5 * self.m_dim * (np.log(self.m_rel * 0.5) + 1.0 / self.m_rel + np.log(2 * np.pi))
             self.m_var_x2 = (cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]) * r[:, np.newaxis, np.newaxis]
         elif self.mode == 'diagonal':
             cov = 0.5 * (x2 - mean * mean * r[:, np.newaxis])
             a = 0.5 * self.m_rel + 1
-            self.m_precis[:,:] = a[:,np.newaxis] / cov
-            self.m_const[:] = 0.5 * self.m_dim * (digamma(a) - 1.0 / self.m_rel - np.log(2 * np.pi)) - 0.5 * np.sum(np.log(cov), 1)
+            self.m_precis = a[:,np.newaxis] / cov
+            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.m_rel - np.log(2 * np.pi)) - 0.5 * np.sum(np.log(cov), 1)
             self.m_var_x2 = 2 * cov + r[:, np.newaxis] * mean * mean
         elif self.mode == 'spherical':
             cov = 0.5 * (x2 - np.sum(mean * mean, 1) * r)
             a = 0.5 * (self.m_dim * (self.m_rel - 1)) + 1
-            self.m_precis[:] = a / cov
-            self.m_const[:] = 0.5 * self.m_dim * (digamma(a) - 1.0 / self.m_rel - np.log(cov) - np.log(2 * np.pi))
+            self.m_precis = a / cov
+            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.m_rel - np.log(cov) - np.log(2 * np.pi))
             self.m_var_x2 = 2 * cov + r * np.sum(mean * mean, 1)
         else:
-            print 'unkown'
+            print 'unknown mode'
+
     def par_to_natual(self, cov, mean, r):
         x = mean * r[:, np.newaxis]
         if self.mode == 'full':
@@ -261,8 +258,9 @@ class online_dp:
         elif self.mode == 'spherical':
             x2 = 2 * cov + r * np.sum(mean * mean, 1)
         else:
-            print 'unkown mode'
+            print 'unknown mode'
         return x2, x
+
     def new_init(self, c):
         np.random.shuffle(c)
         self.m_means[:] = c[0:self.m_T]
@@ -431,8 +429,8 @@ class online_hdp(online_dp):
                 #debug('init group')
                 score += self.init_group(group, ss, Elogsticks_1st, batch_size)
             else:
-                #debug('process_group')
-                score += self.process_group(group, ss, Elogsticks_1st, batch_size)
+                #score += self.process_group(group, ss, Elogsticks_1st, batch_size)
+                score += self.c_process_group(group, ss, Elogsticks_1st, batch_size)
         self.update_model(ss)
         return score
 
@@ -519,7 +517,7 @@ class online_hdp(online_dp):
         #debug(iter)
         # update the suff_stat ss 
         group.m_v = v
-        group.m_var_phi = var_phi
+        group.m_var_phi = var_phi + np.finfo(np.float32).eps
         group.update_timect += 1
         z = np.dot(phi, var_phi) 
         self.add_to_sstats(var_phi, z, X, ss)
@@ -556,6 +554,117 @@ class online_hdp(online_dp):
         (log_var_phi, log_norm) = log_normalize(var_phi)
         var_phi = np.exp(log_var_phi)
         ## TODO
+        rhot = pow(self.m_tau + group.update_timect, -self.m_kappa)
+        group.update_timect += 1
+        scale = float(group.size) / batch_size
+
+        ## update group parameter m_v
+        v[0] = 1.0 + scale * np.sum(phi[:,:self.m_K-1], 0)
+        phi_cum = np.flipud(np.sum(phi[:,1:], 0))
+        v[1] = self.m_alpha + scale * np.flipud(np.cumsum(phi_cum))
+        group.m_v = (1 - rhot) * group.m_v + rhot * v
+
+        ## update group parameter m_var_phi
+        ## notice: the natual parameter is log(var_phi)
+        log_m_var_phi = np.log(group.m_var_phi)
+        log_m_var_phi = (1 - rhot) * log_m_var_phi + rhot * log_var_phi
+        group.m_var_phi = np.exp(log_m_var_phi)
+
+        # compute likelihood
+        # var_phi part/ C in john's notation
+        likelihood = 0.0
+        likelihood += np.sum((Elogsticks_1st - log_var_phi) * var_phi)
+
+        # v part/ v in john's notation, john's beta is alpha here
+        log_alpha = np.log(self.m_alpha)
+        likelihood += (self.m_K-1) * log_alpha
+        dig_sum = sp.psi(np.sum(v, 0))
+        likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
+        likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
+
+        # Z part 
+        likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
+
+        # X part, the data part
+        likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
+
+        #debug(likelihood, old_likelihood)
+
+        #debug(iter)    
+        # update the suff_stat ss 
+        z = np.dot(phi, var_phi) 
+        self.add_to_sstats(var_phi, z, X, ss)
+        return likelihood
+
+    def c_process_group(self, group, ss, Elogsticks_1st, batch_size, var_converge = 0.000001, max_iter=20):
+        X = group.data.sample(batch_size)
+        phi = np.ones((X.shape[0], self.m_K)) / self.m_K
+        v = group.m_v.copy()
+        var_phi = group.m_var_phi.copy()
+        Elogsticks_2nd = expect_log_sticks(v)
+        Eloggauss = self.E_log_gauss(X)
+
+        likelihood = 0.0
+        old_likelihood = -1e100
+        converge = 1.0 
+        eps = 1e-100
+        iter = 0
+        while iter < 3 or (iter < max_iter and (converge <= 0.0 or converge > var_converge)):
+            if iter < 5:
+                var_phi = np.dot(phi.T, Eloggauss)
+                (log_var_phi, log_norm) = log_normalize(var_phi)
+                var_phi = np.exp(log_var_phi)
+            else:
+                var_phi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
+                (log_var_phi, log_norm) = log_normalize(var_phi)
+                var_phi = np.exp(log_var_phi)
+            
+            # phi
+            if iter < 5:
+                phi = np.dot(Eloggauss, var_phi.T)
+                (log_phi, log_norm) = log_normalize(phi)
+                phi = np.exp(log_phi)
+            else:
+                phi = np.dot(Eloggauss, var_phi.T) + Elogsticks_2nd
+                (log_phi, log_norm) = log_normalize(phi)
+                phi = np.exp(log_phi)
+
+            # v
+            v[0] = 1.0 + np.sum(phi[:,:self.m_K-1], 0)
+            phi_cum = np.flipud(np.sum(phi[:,1:], 0))
+            v[1] = self.m_alpha + np.flipud(np.cumsum(phi_cum))
+            Elogsticks_2nd = expect_log_sticks(v)
+            #debug(np.exp(Elogsticks_2nd))
+
+            ## TODO: likelihood need complete
+            likelihood = 0.0
+            # compute likelihood
+            # var_phi part/ C in john's notation
+            likelihood += np.sum((Elogsticks_1st - log_var_phi) * var_phi)
+
+            # v part/ v in john's notation, john's beta is alpha here
+            log_alpha = np.log(self.m_alpha)
+            likelihood += (self.m_K-1) * log_alpha
+            dig_sum = sp.psi(np.sum(v, 0))
+            likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
+            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
+
+            # Z part 
+            likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
+
+            # X part, the data part
+            likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
+
+            #debug(likelihood, old_likelihood)
+
+            converge = (likelihood - old_likelihood)/abs(old_likelihood)
+            old_likelihood = likelihood
+
+            if converge < -0.000001:
+                print "warning, likelihood is decreasing!"
+            
+            iter += 1
+
         rhot = pow(self.m_tau + group.update_timect, -self.m_kappa)
         group.update_timect += 1
         scale = float(group.size) / batch_size
