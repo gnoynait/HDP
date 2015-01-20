@@ -191,12 +191,11 @@ class online_dp:
         ## mode: spherical, diagonal, full
         self.mode = mode
         ## the prior of each gaussian
-        if init_mean == None:
+        if init_mean == None or init_mean.shape != (self.m_T, self.m_dim):
+            print 'random init mean'
             self.m_mean = np.random.normal(0, 1, (self.m_T, self.m_dim))
         else:
             self.m_mean = init_mean
-        ## self.prior_x1 always equals zeros
-        self.var_x0 = np.ones(self.m_T) * self.prior_x0
         self.m_const = np.zeros(self.m_T)
         if mode == 'full':
             self.m_precis = np.tile(\
@@ -209,7 +208,7 @@ class online_dp:
 
             self.prior_x2 = self.prior_x0 * cov
             self.var_x0 = np.ones(self.m_T) * self.prior_x0
-            self.var_x1 = np.prior_x0 * self.m_mean
+            self.var_x1 = self.prior_x0 * self.m_mean
             self.var_x2 = self.prior_x0 * (self.m_mean[:,np.newaxis,:] *\
                 self.m_mean[:,:,np.newaxis] + cov)
         elif mode == 'diagonal':
@@ -218,10 +217,10 @@ class online_dp:
                 self.prior_x0 = 1
             else:
                 self.prior_x0 = prior_x0
-            self.prior_x2 = np.ones(self.m_T) * (self.prior_x0 + 1) * init_cov
+            self.prior_x2 = (self.prior_x0+2) * init_cov * np.ones(self.m_dim)
             self.var_x0 = np.ones(self.m_T) * self.prior_x0
-            self.var_x1 = np.m_mean * self.var_x0[:, np.newaxis]
-            self.var_x2 = (self.prior_x0 + 1) * init_cov +\
+            self.var_x1 = self.m_mean * self.prior_x0
+            self.var_x2 = (self.prior_x0+2) * init_cov +\
                 self.prior_x0 * (self.m_mean ** 2)
         elif mode == 'spherical':
             self.m_precis = np.ones(self.m_T) / init_cov
@@ -229,11 +228,11 @@ class online_dp:
                 self.prior_x0 = 1
             else:
                 self.prior_x0 = prior_x0
-            self.prior_x2 = (self.m_dim * self.prior_x0 - self.m_dim + 2) \
-                * init_cov
+            self.prior_x2 = (self.m_dim * self.prior_x0 - self.m_dim + 2) *\
+                init_cov
             self.var_x0 = np.ones(self.m_T) * self.prior_x0
-            self.var_x1 = np.m_mean * self.var_x0[:, np.newaxis]
-            self.var_x2 = np.sum(self.m_mean ** 2 , 1) + \
+            self.var_x1 = self.m_mean * self.prior_x0
+            self.var_x2 = self.prior_x0 * np.sum(self.m_mean ** 2 , 1) + \
                 (self.m_dim * self.prior_x0 - self.m_dim + 2) * init_cov
         elif mode == 'semi-spherical':
             self.m_precis = np.ones(self.m_T) / init_cov
@@ -253,6 +252,8 @@ class online_dp:
         self.update_par(self.var_x2, self.var_x1, self.var_x0)
 
     def get_cov(self):
+        """return covariance matrix
+        """
         cov = np.empty((self.m_T, self.m_dim, self.m_dim), dtype = 'float64')
         if self.mode == 'full':
             for t in range(self.m_T):
@@ -274,40 +275,47 @@ class online_dp:
         """update m_mean, m_precis, m_const
         """
         #self.m_var_x = x
-        mean = x / r[:, np.newaxis]
-        self.m_mean = mean
         if self.mode == 'full':
-            cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] \
-                * mean[:,np.newaxis,:]
+            mean = x / r[:, np.newaxis]
+            self.m_mean = mean
+            cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] *\
+                mean[:,np.newaxis,:]
             for t in range(self.m_T):
                 self.m_precis[t] = linalg.inv(cov[t])
-                self.m_const[t] = 0.5 * (linalg.det(self.m_precis[t]) +\
+                self.m_const[t] = 0.5 * (np.log(linalg.det(self.m_precis[t])) +\
                     np.sum(sp.psi(0.5 * \
-                        (self.var_x0[t] - np.arange(self.m_dim)))))
+                    (self.var_x0[t] - np.arange(self.m_dim)))))
             self.m_const -= 0.5 * self.m_dim * \
                 (np.log(self.var_x0 * 0.5) + \
                     1.0 / self.var_x0 + np.log(2 * np.pi))
             #self.m_var_x2 = (cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]) * r[:, np.newaxis, np.newaxis]
         elif self.mode == 'diagonal':
-            cov = 0.5 * (x2 - mean * mean * r[:, np.newaxis])
-            a = 0.5 * self.var_x0 + 1
-            self.m_precis = a[:,np.newaxis] / cov
-            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.var_x0 \
-                - np.log(2 * np.pi)) - 0.5 * np.sum(np.log(cov), 1)
+            mean = x / r[:, np.newaxis]
+            self.m_mean = mean
+            a = 0.5 * (r + 2)
+            b = 0.5 * (x2 - mean * mean * r[:, np.newaxis])
+            self.m_precis = (r[:,np.newaxis] + 2) * 0.5 / b
+            self.m_const = 0.5 * self.m_dim * \
+                (sp.psi(a)  - 1.0 / r - np.log(2 * np.pi)) -\
+                0.5 * np.sum(np.log(b), 1)
             #self.m_var_x2 = 2 * cov + r[:, np.newaxis] * mean * mean
         elif self.mode == 'spherical':
-            cov = 0.5 * (x2 - np.sum(mean * mean, 1) * r)
-            a = 0.5 * (self.m_dim * (self.var_x0 - 1)) + 1
-            self.m_precis = a / cov
-            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.var_x0 \
-                - np.log(cov) - np.log(2 * np.pi))
+            mean = x / r[:, np.newaxis]
+            self.m_mean = mean
+            b = 0.5 * (x2 - np.sum(mean * mean, 1) * r)
+            a = 0.5 * (self.m_dim * r - self.m_dim + 2)
+            self.m_precis = a / b
+            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / r \
+                - np.log(b) - np.log(2 * np.pi))
             #self.m_var_x2 = 2 * cov + r * np.sum(mean * mean, 1)
         elif self.mode == 'semi-spherical':
+            mean = x / r[:,0][:, np.newaxis]
+            self.m_mean = mean
             # precision of the mean
-            self.m_precis = (self.m_dim*r[1] + 2) / x2
-            self.m_const = 0.5*self.m_dim(
+            self.m_precis = (self.m_dim*r[:, 1] + 2) / x2
+            self.m_const = 0.5*self.m_dim * (
                     np.log(self.m_precis) - np.log(np.pi * 2) 
-                    - 1.0 / r[0])
+                    - 1.0 / r[:, 0])
         else:
             raise NoSuchModeError
 
@@ -365,28 +373,29 @@ class online_dp:
 
     def add_to_sstats(self, var_phi, z, X, ss):
         ss.var_stick += np.sum(var_phi, 0)   
-        ss.m_var_res += np.sum(z, axis = 0)
-        ss.m_var_x += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
+        ss.var_x0 += np.sum(z, 0)
+        ss.var_x1 += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
         if self.mode == 'full':
             for n in range(X.shape[0]):
                 x2 = X[n,:,np.newaxis] * X[n,np.newaxis,:]
-                ss.m_var_x2 += x2[np.newaxis,:,:] * z[n,:,np.newaxis,np.newaxis]
+                ss.var_x2 += x2[np.newaxis,:,:] * z[n,:,np.newaxis,np.newaxis]
         elif self.mode == 'diagonal':
             x2 = X * X
-            ss.m_var_x2 += np.sum(x2[:,np.newaxis,:] * z[:,:,np.newaxis], 0)
+            ss.var_x2 += np.sum(x2[:,np.newaxis,:] * z[:,:,np.newaxis], 0)
         elif self.mode == 'spherical':
             x2 = np.sum(X * X, 1)
-            ss.m_var_x2 += np.sum(x2[:,np.newaxis] * z, 0)
+            ss.var_x2 += np.sum(x2[:,np.newaxis] * z, 0)
         elif self.mode == 'semi-spherical':
-            const = self.m_dim / (self.var_x0 * self.m_precis)
+            # TODO: check 0 or 1
+            const = self.m_dim / (self.var_x0[:,0] * self.m_precis)
             for n in range(X.shape[0]):
                 dx = X[n][np.newaxis,:] - self.m_mean
-                ss.m_var_x2 += (np.sum(dx * dx, 1) + const) * z[n]
+                ss.var_x2 += (np.sum(dx * dx, 1) + const) * z[n]
         else:
             raise NoSuchModeError
 
     def fit(self, X, size = 200, max_iter = 1000):
-        self.new_init(X)
+        #self.new_init(X)
         for i in range(max_iter):
             samples = np.array(\
                 np.random.sample(size) * X.shape[0], dtype = 'int32')
@@ -410,15 +419,15 @@ class online_dp:
                     "mahalanobis", VI=self.m_precis[t]) ** 2).reshape(-1)
         elif self.mode == 'diagonal':
             for t in range(self.m_T):
-                ds[:,t] = np.sum(((X - self.m_mean[t][np.newaxis]) ** 2) *\
-                    self.m_precis[t][np.newaxis], 1)
+                ds[:,t] = np.sum(((X - self.m_mean[t]) ** 2) *\
+                    self.m_precis[t], 1)
         elif self.mode == 'spherical':
             for t in range(self.m_T):
-                ds[:,t] = np.sum(((X - self.m_mean[t][np.newaxis]) ** 2), 1)\
+                ds[:,t] = np.sum(((X - self.m_mean[t]) ** 2), 1)\
                     * self.m_precis[t]
         elif self.mode == 'semi-spherical':
             for t in range(self.m_T):
-                ds[:,t] = np.sum(((X - self.m_mean[t][np.newaxis]) ** 2), 1)\
+                ds[:,t] = np.sum(((X - self.m_mean[t]) ** 2), 1)\
                     * self.m_precis[t]
         else:
             raise NoSuchModeError
@@ -443,8 +452,13 @@ class online_dp:
         varphi_sum = np.flipud(self.var_varphi[1:])
         self.var_stick[1] = np.flipud(np.cumsum(varphi_sum)) + self.m_gamma
 
-        var_x0 = (1 - rhot) * self.var_x0 + \
-            rhot*(self.prior_x0 + scale * sstats.var_x0)
+        if self.mode == 'semi-spherical':
+            var_x0 = (1 - rhot) * self.var_x0 + \
+                rhot*(self.prior_x0 \
+                + scale * sstats.var_x0[:, np.newaxis])
+        else:
+            var_x0 = (1 - rhot) * self.var_x0 + \
+                rhot*(self.prior_x0 + scale * sstats.var_x0)
         var_x1 = (1 - rhot)* self.var_x1 + \
             rhot * scale * sstats.var_x1 # note: prior_x1 = 0
         var_x2 = (1 - rhot)* self.var_x2 + \
@@ -804,7 +818,7 @@ class online_hdp(online_dp):
         return likelihood
 
     def doc_e_step(self, X, ss, Elogsticks_1st, var_converge, max_iter=100):
-        raise Exception("should use process_group instead")
+        #raise Exception("should use process_group instead")
         """
         e step for a single corps
         """
