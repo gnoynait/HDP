@@ -24,6 +24,10 @@ def debug(*W):
         sys.stderr.write(str(w) + '\n')
     sys.stderr.write('-' * 75 + '\n')
 
+class NoSuchModeError(Exception):
+    def __str__(self):
+        return 'No Such Mode Error'
+
 def log_normalize(v):
     ''' return log(sum(exp(v)))'''
     log_max = 100.0
@@ -62,19 +66,20 @@ class suff_stats:
         # T: top level topic number
         # dim: dimension
         # size: batch size
-        self.m_batchsize = size
-        self.m_var_sticks_ss = np.zeros(T) 
-        self.m_var_res = np.zeros(T)
-        self.m_var_x = np.zeros((T, dim))
+        self.batchsize = size
+        self.var_stick = np.zeros(T) 
+        self.var_x0 = np.zeros(T)
+        self.var_x1 = np.zeros((T, dim))
         if mode == 'full':
-            self.m_var_x2 = np.zeros((T, dim, dim))
+            self.var_x2 = np.zeros((T, dim, dim))
         elif mode == 'diagonal':
-            self.m_var_x2 = np.zeros((T, dim))
+            self.var_x2 = np.zeros((T, dim))
         elif mode == 'spherical':
-            self.m_var_x2 = np.zeros(T)
+            self.var_x2 = np.zeros(T)
+        elif mode == 'semi-spherical':
+            self.var_x2 = np.zeros(T)
         else:
-            print 'unknow mode'
-            sys.exit()
+            raise NoSuchModeError
 class Data:
     def __init__(self):
         pass
@@ -146,7 +151,9 @@ class RandomGaussMixtureData(Data):
         data = np.zeros((n, self.mean.shape[1]))
         start = 0
         for i in range(len(count)):
-            data[start: start + count[i], :] = np.random.multivariate_normal(self.mean[i], self.cov[i], count[i])
+            data[start:start+count[i],:] = \
+                np.random.multivariate_normal(\
+                    self.mean[i], self.cov[i], count[i])
             start = start + count[i]
         s = np.arange(n)
         np.random.shuffle(s)
@@ -154,7 +161,8 @@ class RandomGaussMixtureData(Data):
 
 class online_dp:
     ''' hdp model using stick breaking'''
-    def __init__(self, T, gamma, kappa, tau, total, dim, mode):
+    def __init__(self, T, gamma, kappa, tau, total, dim, mode,
+            init_mean=None, init_cov=1.0, prior_x0=None):
         """ T: top level truncation level
         gamma: first level concentration
         kappa: learning rate
@@ -173,40 +181,76 @@ class online_dp:
         self.m_updatect = 0 # update count
 
         ## each column is the top level topic's beta distribution para
-        self.m_var_sticks = np.zeros((2, T-1))
-        self.m_var_sticks[0] = 1.0
-        self.m_var_sticks[1] = self.m_gamma
+        self.var_stick = np.zeros((2, T-1))
+        self.var_stick[0] = 1.0
+        self.var_stick[1] = self.m_gamma
 
-        self.m_varphi_ss = np.zeros(T)
+        self.var_varphi = np.zeros(T)
 
         self.m_dim = dim # the vector dimension
         ## mode: spherical, diagonal, full
         self.mode = mode
         ## the prior of each gaussian
-        self.m_rel0 = np.ones(self.m_T) * (self.m_dim + 2)
-        self.m_var_x0 = np.zeros((self.m_T, self.m_dim))
-        self.m_means = np.random.normal(0, 1, (self.m_T, self.m_dim))
-        self.m_rel = np.ones(self.m_T) * self.m_rel0
+        if init_mean == None:
+            self.m_mean = np.random.normal(0, 1, (self.m_T, self.m_dim))
+        else:
+            self.m_mean = init_mean
+        ## self.prior_x1 always equals zeros
+        self.var_x0 = np.ones(self.m_T) * self.prior_x0
         self.m_const = np.zeros(self.m_T)
         if mode == 'full':
-            self.m_var_x20 = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) \
-                * self.m_rel0[:, np.newaxis, np.newaxis]
-            cov = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1))
-            self.m_precis = np.tile(np.eye(self.m_dim), (self.m_T, 1, 1)) 
-        elif mode == 'diagonal':
-            self.m_var_x20 = np.ones((self.m_T, self.m_dim)) * (self.m_dim + 2)
-            cov = np.ones((self.m_T, self.m_dim))
-            self.m_precis = np.ones((self.m_T, self.m_dim))
-        elif mode == 'spherical':
-            self.m_var_x20 = np.ones(self.m_T) * (self.m_dim * self.m_rel0 - self.m_dim + 2)
-            cov = np.ones(self.m_T)
-            self.m_precis = np.ones(self.m_T)
-        else:
-            print 'unknown mode'
-            sys.exit()
-        x2, x1 = self.par_to_natual(cov, self.m_means, self.m_rel)
-        self.natual_to_par(x2, x1, self.m_rel)
+            self.m_precis = np.tile(\
+                np.eye(self.m_dim) / init_cov, (self.m_T, 1, 1)) 
+            if prior_x0 == None or prior_x0 < self.m_dim + 2:
+                self.prior_x0 = self.m_dim + 2
+            else:
+                self.prior_x0 = prior_x0
+            cov = np.tile(np.eye(self.m_dim) * init_cov, (self.m_T, 1, 1)) 
 
+            self.prior_x2 = self.prior_x0 * cov
+            self.var_x0 = np.ones(self.m_T) * self.prior_x0
+            self.var_x1 = np.prior_x0 * self.m_mean
+            self.var_x2 = self.prior_x0 * (self.m_mean[:,np.newaxis,:] *\
+                self.m_mean[:,:,np.newaxis] + cov)
+        elif mode == 'diagonal':
+            self.m_precis = np.ones((self.m_T, self.m_dim)) / init_cov
+            if prior_x0 == None:
+                self.prior_x0 = 1
+            else:
+                self.prior_x0 = prior_x0
+            self.prior_x2 = np.ones(self.m_T) * (self.prior_x0 + 1) * init_cov
+            self.var_x0 = np.ones(self.m_T) * self.prior_x0
+            self.var_x1 = np.m_mean * self.var_x0[:, np.newaxis]
+            self.var_x2 = (self.prior_x0 + 1) * init_cov +\
+                self.prior_x0 * (self.m_mean ** 2)
+        elif mode == 'spherical':
+            self.m_precis = np.ones(self.m_T) / init_cov
+            if prior_x0 == None:
+                self.prior_x0 = 1
+            else:
+                self.prior_x0 = prior_x0
+            self.prior_x2 = (self.m_dim * self.prior_x0 - self.m_dim + 2) \
+                * init_cov
+            self.var_x0 = np.ones(self.m_T) * self.prior_x0
+            self.var_x1 = np.m_mean * self.var_x0[:, np.newaxis]
+            self.var_x2 = np.sum(self.m_mean ** 2 , 1) + \
+                (self.m_dim * self.prior_x0 - self.m_dim + 2) * init_cov
+        elif mode == 'semi-spherical':
+            self.m_precis = np.ones(self.m_T) / init_cov
+            # prior = (mean_x0, precis_x0)
+            if prior_x0 == None:
+                self.prior_x0 = (1, 100000)
+            else:
+                self.prior_x0 = prior_x0
+            self.prior_x2 = (self.m_dim*self.prior_x0[1] + 2) * init_cov
+
+            self.var_x0 = np.tile(self.prior_x0, (self.m_T, 1))
+            self.var_x1 = self.m_mean * self.prior_x0[0]
+            self.var_x2 = (self.m_dim*self.prior_x0[1] + 2) * init_cov
+        else:
+            raise NoSuchModeError
+
+        self.update_par(self.var_x2, self.var_x1, self.var_x0)
 
     def get_cov(self):
         cov = np.empty((self.m_T, self.m_dim, self.m_dim), dtype = 'float64')
@@ -219,36 +263,56 @@ class online_dp:
         elif self.mode == 'spherical':
             for t in range(self.m_T):
                 cov[t] = np.eye(self.m_dim) / self.m_precis[t]
+        elif self.mode == 'semi-spherical':
+            for t in range(self.m_T):
+                cov[t] = np.eye(self.m_dim) / self.m_precis[t]
         else:
-            print 'unknown mode'
+            raise NoSuchModeError
         return cov
 
-    def natual_to_par(self, x2, x, r):
-        self.m_var_x = x
-        self.m_means = x / r[:, np.newaxis]
+    def update_par(self, x2, x, r):
+        """update m_mean, m_precis, m_const
+        """
+        #self.m_var_x = x
+        mean = x / r[:, np.newaxis]
+        self.m_mean = mean
         if self.mode == 'full':
-            cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] * mean[:,np.newaxis,:]
+            cov = x2 / r[:,np.newaxis, np.newaxis] - mean[:,:,np.newaxis] \
+                * mean[:,np.newaxis,:]
             for t in range(self.m_T):
                 self.m_precis[t] = linalg.inv(cov[t])
-                self.m_const[t] = 0.5 * (linalg.det(self.m_precis[t]) + np.sum(sp.psi(0.5 * (self.m_rel[t] - np.arange(self.m_dim)))))
-            self.m_const -= 0.5 * self.m_dim * (np.log(self.m_rel * 0.5) + 1.0 / self.m_rel + np.log(2 * np.pi))
-            self.m_var_x2 = (cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]) * r[:, np.newaxis, np.newaxis]
+                self.m_const[t] = 0.5 * (linalg.det(self.m_precis[t]) +\
+                    np.sum(sp.psi(0.5 * \
+                        (self.var_x0[t] - np.arange(self.m_dim)))))
+            self.m_const -= 0.5 * self.m_dim * \
+                (np.log(self.var_x0 * 0.5) + \
+                    1.0 / self.var_x0 + np.log(2 * np.pi))
+            #self.m_var_x2 = (cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]) * r[:, np.newaxis, np.newaxis]
         elif self.mode == 'diagonal':
             cov = 0.5 * (x2 - mean * mean * r[:, np.newaxis])
-            a = 0.5 * self.m_rel + 1
+            a = 0.5 * self.var_x0 + 1
             self.m_precis = a[:,np.newaxis] / cov
-            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.m_rel - np.log(2 * np.pi)) - 0.5 * np.sum(np.log(cov), 1)
-            self.m_var_x2 = 2 * cov + r[:, np.newaxis] * mean * mean
+            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.var_x0 \
+                - np.log(2 * np.pi)) - 0.5 * np.sum(np.log(cov), 1)
+            #self.m_var_x2 = 2 * cov + r[:, np.newaxis] * mean * mean
         elif self.mode == 'spherical':
             cov = 0.5 * (x2 - np.sum(mean * mean, 1) * r)
-            a = 0.5 * (self.m_dim * (self.m_rel - 1)) + 1
+            a = 0.5 * (self.m_dim * (self.var_x0 - 1)) + 1
             self.m_precis = a / cov
-            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.m_rel - np.log(cov) - np.log(2 * np.pi))
-            self.m_var_x2 = 2 * cov + r * np.sum(mean * mean, 1)
+            self.m_const = 0.5 * self.m_dim * (sp.psi(a) - 1.0 / self.var_x0 \
+                - np.log(cov) - np.log(2 * np.pi))
+            #self.m_var_x2 = 2 * cov + r * np.sum(mean * mean, 1)
+        elif self.mode == 'semi-spherical':
+            # precision of the mean
+            self.m_precis = (self.m_dim*r[1] + 2) / x2
+            self.m_const = 0.5*self.m_dim(
+                    np.log(self.m_precis) - np.log(np.pi * 2) 
+                    - 1.0 / r[0])
         else:
-            print 'unknown mode'
+            raise NoSuchModeError
 
-    def par_to_natual(self, cov, mean, r):
+    def par_to_natural(self, cov, mean, r):
+        raise Exception("don't use this")
         x = mean * r[:, np.newaxis]
         if self.mode == 'full':
             x2 = cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]
@@ -257,20 +321,24 @@ class online_dp:
             x2 = 2 * cov + r[:, np.newaxis] * mean * mean
         elif self.mode == 'spherical':
             x2 = 2 * cov + r * np.sum(mean * mean, 1)
+        elif self.mode == 'semi-spherical':
+            x2 = (self.m_dim*r + 2) * cov
         else:
-            print 'unknown mode'
+            raise NoSuchModeError
         return x2, x
 
     def new_init(self, c):
+        """"no use"""
+        raise Exception("no use")
         np.random.shuffle(c)
-        self.m_means[:] = c[0:self.m_T]
+        self.m_mean[:] = c[0:self.m_T]
 
     def process_documents(self, cops, var_converge = 0.000001):
         size = 0
         for c in cops:
             size += c.shape[0]
         ss = suff_stats(self.m_T, self.m_dim, size, self.mode) 
-        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
+        Elogsticks_1st = expect_log_sticks(self.var_stick) 
 
         score = 0.0
         for i, cop in enumerate(cops):
@@ -296,7 +364,7 @@ class online_dp:
         return likelihood
 
     def add_to_sstats(self, var_phi, z, X, ss):
-        ss.m_var_sticks_ss += np.sum(var_phi, 0)   
+        ss.var_stick += np.sum(var_phi, 0)   
         ss.m_var_res += np.sum(z, axis = 0)
         ss.m_var_x += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
         if self.mode == 'full':
@@ -309,18 +377,24 @@ class online_dp:
         elif self.mode == 'spherical':
             x2 = np.sum(X * X, 1)
             ss.m_var_x2 += np.sum(x2[:,np.newaxis] * z, 0)
+        elif self.mode == 'semi-spherical':
+            const = self.m_dim / (self.var_x0 * self.m_precis)
+            for n in range(X.shape[0]):
+                dx = X[n][np.newaxis,:] - self.m_mean
+                ss.m_var_x2 += (np.sum(dx * dx, 1) + const) * z[n]
         else:
-            print 'unkonw mode'
+            raise NoSuchModeError
 
     def fit(self, X, size = 200, max_iter = 1000):
         self.new_init(X)
         for i in range(max_iter):
-            samples = np.array(np.random.sample(size) * X.shape[0], dtype = 'int32')
+            samples = np.array(\
+                np.random.sample(size) * X.shape[0], dtype = 'int32')
             data = X[samples]
             self.process_documents([data])
 
     def predict(self, X):
-        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
+        Elogsticks_1st = expect_log_sticks(self.var_stick) 
         res = self.E_log_gauss(X) + Elogsticks_1st
         return res.argmax(axis=1)
 
@@ -332,18 +406,22 @@ class online_dp:
         ds = np.zeros((X.shape[0], self.m_T))
         if self.mode == 'full':
             for t in range(self.m_T):
-                ds[:,t] = (distance.cdist(X, self.m_means[t][np.newaxis], \
+                ds[:,t] = (distance.cdist(X, self.m_mean[t][np.newaxis], \
                     "mahalanobis", VI=self.m_precis[t]) ** 2).reshape(-1)
         elif self.mode == 'diagonal':
             for t in range(self.m_T):
-                ds[:,t] = np.sum(((X - self.m_means[t][np.newaxis]) ** 2) *\
+                ds[:,t] = np.sum(((X - self.m_mean[t][np.newaxis]) ** 2) *\
                     self.m_precis[t][np.newaxis], 1)
         elif self.mode == 'spherical':
             for t in range(self.m_T):
-                ds[:,t] = np.sum(((X - self.m_means[t][np.newaxis]) ** 2), 1)\
+                ds[:,t] = np.sum(((X - self.m_mean[t][np.newaxis]) ** 2), 1)\
+                    * self.m_precis[t]
+        elif self.mode == 'semi-spherical':
+            for t in range(self.m_T):
+                ds[:,t] = np.sum(((X - self.m_mean[t][np.newaxis]) ** 2), 1)\
                     * self.m_precis[t]
         else:
-            print 'unkonw mode'
+            raise NoSuchModeError
         return ds
 
     def update_model(self, sstats):
@@ -356,25 +434,30 @@ class online_dp:
         self.m_rhot = rhot
         self.m_updatect += 1
 
-        scale = self.m_total / sstats.m_batchsize
-        self.m_varphi_ss = (1.0-rhot) * self.m_varphi_ss + rhot * \
-               sstats.m_var_sticks_ss * scale
+        scale = self.m_total / sstats.batchsize
 
-        self.m_rel = self.m_rel * (1 - rhot) + rhot * (self.m_rel0 + scale * sstats.m_var_res)
-
-        var_x = self.m_var_x * (1 - rhot) + rhot * (self.m_var_x0 + scale * sstats.m_var_x)
-        var_x2 = self.m_var_x2 * (1 - rhot) + rhot * (self.m_var_x20 + scale * sstats.m_var_x2)
-        self.natual_to_par(var_x2, var_x, self.m_rel)
-
+        self.var_varphi = (1.0-rhot) * self.var_varphi + \
+            rhot * scale * sstats.var_stick
         ## update top level sticks 
-        var_sticks_ss = np.zeros((2, self.m_T-1))
-        self.m_var_sticks[0] = self.m_varphi_ss[:self.m_T-1]  + 1.0
-        var_phi_sum = np.flipud(self.m_varphi_ss[1:])
-        self.m_var_sticks[1] = np.flipud(np.cumsum(var_phi_sum)) + self.m_gamma
+        self.var_stick[0] = self.var_varphi[:self.m_T-1]  + 1.0
+        varphi_sum = np.flipud(self.var_varphi[1:])
+        self.var_stick[1] = np.flipud(np.cumsum(varphi_sum)) + self.m_gamma
+
+        var_x0 = (1 - rhot) * self.var_x0 + \
+            rhot*(self.prior_x0 + scale * sstats.var_x0)
+        var_x1 = (1 - rhot)* self.var_x1 + \
+            rhot * scale * sstats.var_x1 # note: prior_x1 = 0
+        var_x2 = (1 - rhot)* self.var_x2 + \
+            rhot * (self.prior_x2 + scale * sstats.var_x2)
+        self.update_par(var_x2, var_x1, var_x0)
+        self.var_x0 = var_x0
+        self.var_x1 = var_x1
+        self.var_x2 = var_x2
+
 
     def save_model(self, output):
-        model = {'sticks':self.m_var_sticks,
-                'means': self.m_means,
+        model = {'sticks':self.var_stick,
+                'means': self.m_mean,
                 'precis':self.m_cov}
         cPickle.dump(model, output)
 
@@ -412,7 +495,7 @@ class online_hdp(online_dp):
         self.m_alpha = alpha # second level concentration
 
     def process_groups(self, groups):
-        ## should remove m_batchsize from suff_stats for 
+        ## should remove batchsize from suff_stats for 
         ## batch_size = m_rel.sum()
         ## TODO fix batch_size
         size = 1000
@@ -420,7 +503,7 @@ class online_hdp(online_dp):
         #for c in groups:
             #size += c.shape[0]
         ss = suff_stats(self.m_T, self.m_dim, size, self.mode) 
-        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
+        Elogsticks_1st = expect_log_sticks(self.var_stick) 
 
         score = 0.0
         for group in groups:
@@ -430,11 +513,13 @@ class online_hdp(online_dp):
                 score += self.init_group(group, ss, Elogsticks_1st, batch_size)
             else:
                 #score += self.process_group(group, ss, Elogsticks_1st, batch_size)
-                score += self.c_process_group(group, ss, Elogsticks_1st, batch_size)
+                score += self.c_process_group(\
+                    group, ss, Elogsticks_1st, batch_size)
         self.update_model(ss)
         return score
 
-    def init_group(self, group, ss, Elogsticks_1st, batch_size, var_converge = 0.000001, max_iter=100):
+    def init_group(self, group, ss, Elogsticks_1st, batch_size, \
+            var_converge = 0.000001, max_iter=100):
         ## very similar to the hdp equations
         v = np.zeros((2, self.m_K-1)) 
         v[0] = 1.0
@@ -456,7 +541,8 @@ class online_hdp(online_dp):
         Eloggauss = self.E_log_gauss(X)
         # del var_phi
         #var_phi = None
-        while iter < 10 or (iter < max_iter and (converge <= 0.0 or converge > var_converge)):
+        while iter < 10 or (iter < max_iter \
+            and (converge <= 0.0 or converge > var_converge)):
         #while iter < max_iter:
             ### update variational parameters
             # var_phi 
@@ -496,8 +582,11 @@ class online_hdp(online_dp):
             log_alpha = np.log(self.m_alpha)
             likelihood += (self.m_K-1) * log_alpha
             dig_sum = sp.psi(np.sum(v, 0))
-            likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
-            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
+            likelihood += np.sum(\
+                (np.array([1.0, self.m_alpha])[:,np.newaxis]-v) *\
+                    (sp.psi(v)-dig_sum))
+            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) \
+                - np.sum(sp.gammaln(v))
 
             # Z part 
             likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
@@ -524,7 +613,7 @@ class online_hdp(online_dp):
         return likelihood
 
     def predict(self, X, group = None):
-        Elogsticks_1st = expect_log_sticks(self.m_var_sticks) 
+        Elogsticks_1st = expect_log_sticks(self.var_stick) 
         if group is None:
             res = self.E_log_gauss(X) + Elogsticks_1st
             return res.argmax(axis=1)
@@ -579,7 +668,8 @@ class online_hdp(online_dp):
         log_alpha = np.log(self.m_alpha)
         likelihood += (self.m_K-1) * log_alpha
         dig_sum = sp.psi(np.sum(v, 0))
-        likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
+        likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v)\
+            * (sp.psi(v)-dig_sum))
         likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
 
         # Z part 
@@ -596,7 +686,8 @@ class online_hdp(online_dp):
         self.add_to_sstats(var_phi, z, X, ss)
         return likelihood
 
-    def c_process_group(self, group, ss, Elogsticks_1st, batch_size, var_converge = 0.000001, max_iter=20):
+    def c_process_group(self, group, ss, Elogsticks_1st, batch_size,\
+            var_converge = 0.000001, max_iter=20):
         X = group.data.sample(batch_size)
         phi = np.ones((X.shape[0], self.m_K)) / self.m_K
         v = group.m_v.copy()
@@ -609,7 +700,8 @@ class online_hdp(online_dp):
         converge = 1.0 
         eps = 1e-100
         iter = 0
-        while iter < 3 or (iter < max_iter and (converge <= 0.0 or converge > var_converge)):
+        while iter < 3 or (iter < max_iter \
+                and (converge <= 0.0 or converge > var_converge)):
             if iter < 5:
                 var_phi = np.dot(phi.T, Eloggauss)
                 (log_var_phi, log_norm) = log_normalize(var_phi)
@@ -646,8 +738,11 @@ class online_hdp(online_dp):
             log_alpha = np.log(self.m_alpha)
             likelihood += (self.m_K-1) * log_alpha
             dig_sum = sp.psi(np.sum(v, 0))
-            likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
-            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
+            likelihood += np.sum(\
+                (np.array([1.0, self.m_alpha])[:,np.newaxis]-v) *\
+                    (sp.psi(v)-dig_sum))
+            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) \
+                - np.sum(sp.gammaln(v))
 
             # Z part 
             likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
@@ -690,7 +785,8 @@ class online_hdp(online_dp):
         log_alpha = np.log(self.m_alpha)
         likelihood += (self.m_K-1) * log_alpha
         dig_sum = sp.psi(np.sum(v, 0))
-        likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
+        likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) \
+            * (sp.psi(v)-dig_sum))
         likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
 
         # Z part 
@@ -732,7 +828,8 @@ class online_hdp(online_dp):
         
         Eloggauss = self.E_log_gauss(X)
 
-        while iter < 10 or (iter < max_iter and (converge <= 0.0 or converge > var_converge)):
+        while iter < 10 or (iter < max_iter \
+                and (converge <= 0.0 or converge > var_converge)):
         #while iter < max_iter:
             ### update variational parameters
             # var_phi 
@@ -772,8 +869,11 @@ class online_hdp(online_dp):
             log_alpha = np.log(self.m_alpha)
             likelihood += (self.m_K-1) * log_alpha
             dig_sum = sp.psi(np.sum(v, 0))
-            likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) * (sp.psi(v)-dig_sum))
-            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
+            likelihood += np.sum(\
+                (np.array([1.0, self.m_alpha])[:,np.newaxis]-v) *\
+                    (sp.psi(v)-dig_sum))
+            likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) \
+                - np.sum(sp.gammaln(v))
 
             # Z part 
             likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
