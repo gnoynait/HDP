@@ -10,26 +10,11 @@ from onlinedpgmm import *
 from sklearn.externals.six.moves import xrange
 import time
 # Number of samples per component
-n_samples = 5000
-
-
-T = 50 
-K = 20 
-topics = 10
-D = 500
-## sph 5 0.5
-## dia 2 1
-alpha = 1 # second level
-gamma = 1 # first level
-kappa = 0.75
-tau = 1
-dim = 2
-total = 100000
 
 # Generate random sample following a sine curve
 #rand_seed = 1
-rand_seed = int(time.time())
-np.random.seed(rand_seed)
+#rand_seed = int(time.time())
+#np.random.seed(rand_seed)
 
 """
 for i, (clf, title) in enumerate([
@@ -108,11 +93,17 @@ def plot(axis, model, X, title, lim = None, show = 'md'):
     plt.yticks(())
 
 def show_cosine():
+    np.random.seed(0)
+    random.seed(0)
     T = 50 
-    mode = 'full'
-    np.random.seed(int(time.time()))
+    n_samples = 1000
+    kappa = 0.7
+    tau = 1
+    total = 1000
+    dim = 2
+
     batch_size = 50
-    n_iter = 100
+    n_iter = 300
     X = np.zeros((n_samples, 2))
     step = 4 * np.pi / n_samples
     for i in xrange(X.shape[0]):
@@ -123,10 +114,10 @@ def show_cosine():
     show_case = [
         # mode  gamma
         ('full', 0.001),
-        ('full', 0.5),
-        ('diagonal', 0.5),
-        ('spherical', 0.5),
-        ('semi-spherical', 0.5)]
+        ('full', 1),
+        ('diagonal', 1),
+        ('spherical', 1),
+        ('semi-spherical', 1)]
     for i, (mode, gamma) in enumerate(show_case):
         dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
         dp.fit(X, batch_size, n_iter)
@@ -146,16 +137,20 @@ def gen_grid_data(n):
 	return x
 
 def show_grid():
-    np.random.seed(int(time.time()))
+    np.random.seed(1)
+    random.seed(1)
     T = 80
     K = 10
-    alpha = 0.5
-    D = 200
+    D = 501
     mode = 'spherical'
-    batch_size = 100
-    gamma = 2
-    dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
+    batch_size = 50
+    kappa = 0.75
+    tau = 1.0
     gamma = 10
+    total = 100000
+    dim = 2
+    dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
+    alpha = 0.5
     hdp = online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
     X = np.array([0, 0], dtype = 'float64')
 
@@ -166,7 +161,7 @@ def show_grid():
         dp.process_documents(cops)
         hdp.process_documents(cops)
         for c in cops:
-            X = np.vstack((X, c[:3,:]))
+            X = np.vstack((X, c[:1,:]))
     lim = [-6, 6, -6, 6]
     plot(plt.subplot(221), dp, X, 'DP', lim, 'd')
     plot(plt.subplot(222), dp, X, 'DP', lim, 'm')
@@ -177,7 +172,9 @@ def show_grid():
 from sklearn.cluster import KMeans
 from sklearn import mixture
 def show_comp():
-    np.random.seed(int(time.time()))
+    np.random.seed(0)
+    random.seed(0)
+    dim = 2
     n_samples = 500
     color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm'])
 
@@ -207,10 +204,14 @@ def show_comp():
     dpgmm.fit(X)
 
     T = 50 
+    total = 1000
+    kappa = 0.75
+    tau = 1.0
     mode = 'full'
-    np.random.seed(int(time.time()))
+    np.random.seed(0)
+    random.seed(0)
     batch_size = 50
-    n_iter = 100
+    n_iter = 200
     gamma = 1 
     online_dpgmm = online_dp(T, gamma, kappa, tau, total, dim, mode)
     online_dpgmm.fit(X, batch_size, n_iter)
@@ -249,5 +250,5 @@ def show_comp():
     plt.show()
 
 show_cosine()
-show_grid()
-show_comp()
+#show_grid()
+#show_comp()
