@@ -163,9 +163,9 @@ class OnlineDP:
         self.mode = mode
         self.init_par()
 
-    def init_par(self, init_mean=None, init_cov=1.0, prior_x0=None):
+    def init_par(self, init_mean=None, init_cov=1, prior_x0=None):
         ## the prior of each gaussian
-        if init_mean == None or init_mean.shape != (self.m_T, self.m_dim):
+        if init_mean is None or init_mean.shape != (self.m_T, self.m_dim):
             print 'random init mean'
             self.m_mean = np.random.normal(0, 1, (self.m_T, self.m_dim))
         else:
@@ -175,7 +175,7 @@ class OnlineDP:
         if self.mode == 'full':
             self.m_precis = np.tile(\
                 np.eye(self.m_dim) / init_cov, (self.m_T, 1, 1)) 
-            if prior_x0 == None or prior_x0 < self.m_dim + 2:
+            if prior_x0 is None or prior_x0 < self.m_dim + 2:
                 self.prior_x0 = self.m_dim + 2
             else:
                 self.prior_x0 = prior_x0
@@ -188,7 +188,7 @@ class OnlineDP:
                 self.m_mean[:,:,np.newaxis] + cov)
         elif self.mode == 'diagonal':
             self.m_precis = np.ones((self.m_T, self.m_dim)) / init_cov
-            if prior_x0 == None:
+            if prior_x0 is None:
                 self.prior_x0 = 1
             else:
                 self.prior_x0 = prior_x0
@@ -199,7 +199,7 @@ class OnlineDP:
                 self.prior_x0 * (self.m_mean ** 2)
         elif self.mode == 'spherical':
             self.m_precis = np.ones(self.m_T) / init_cov
-            if prior_x0 == None:
+            if prior_x0 is None:
                 self.prior_x0 = 1
             else:
                 self.prior_x0 = prior_x0
@@ -212,7 +212,7 @@ class OnlineDP:
         elif self.mode == 'semi-spherical':
             self.m_precis = np.ones(self.m_T) / init_cov
             # prior = (mean_x0, precis_x0)
-            if prior_x0 == None:
+            if prior_x0 is None:
                 self.prior_x0 = (1, 100000)
             else:
                 self.prior_x0 = prior_x0
@@ -428,9 +428,9 @@ class OnlineDP:
 
 class Group:
     def __init__(self, alpha, K, size, batchsize, data, \
-            coldstart=True, maxiter=100, online=False):
+            coldstart=False, maxiter=100, online=True):
         self.m_alpha = alpha
-        self.m_K = k
+        self.m_K = K
         #v = np.zeros((2, self.m_K - 1))
         #v[0] = 1.0
         #v[1] = alpha
@@ -444,7 +444,7 @@ class Group:
         self.coldstart = coldstart
         self.maxiter = maxiter
         self.online = online
-    def sample():
+    def sample(self):
         return self.data.sample(self.batchsize)
     def report(self):
         weight = np.exp(expect_log_sticks(self.m_v))
@@ -453,13 +453,13 @@ class Group:
         
 class OnlineHDP(OnlineDP):
     ''' hdp model using stick breaking'''
-    def __init__(self, T, K, D, alpha, gamma, kappa, tau, total, dim, mode):
+    def __init__(self, T, K, alpha, gamma, kappa, tau, total, dim, mode):
         """
         gamma: first level concentration
         alpha: second level concentration
         T: top level truncation level
         K: second level truncation level
-        D: number of documents in the corpus
+        total: number of documents in the corpus
         kappa: learning rate
         tau: slow down parameter
         """
@@ -479,10 +479,10 @@ class OnlineHDP(OnlineDP):
         return score
 
     def process_group(self, group, ss, Elogsticks_1st,\
-            var_converge=0.000001, max_iter=20):
+            var_converge=0.000001):
         X = group.sample()
 
-        if group.coldstart or group.m_v == None or group.m_var_phi == None:
+        if group.coldstart or group.m_v is None or group.m_var_phi is None:
             v = np.zeros((2, group.m_K-1))
             v[0] = 1.0
             v[1] = group.m_alpha
@@ -499,7 +499,7 @@ class OnlineHDP(OnlineDP):
         converge = 1.0 
         eps = 1e-100
         iter = 0
-        while iter < 3 or (iter < group.max_iter \
+        while iter < 3 or (iter < group.maxiter \
                 and (converge <= 0.0 or converge > var_converge)):
             if iter < 5:
                 var_phi = np.dot(phi.T, Eloggauss)
@@ -556,13 +556,11 @@ class OnlineHDP(OnlineDP):
                 print "warning, likelihood is decreasing!"
             
             iter += 1
-
-        if not group.online or group.m_v == None or group.m_var_phi == None:
+        if not group.online or group.m_v is None or group.m_var_phi is None:
             group.m_v = v
             group.m_var_phi = var_phi
         else:
             rhot = pow(self.m_tau + group.update_timect, -self.m_kappa)
-            group.update_timect += 1
             scale = float(group.size) / group.batchsize
 
             ## update group parameter m_v
@@ -573,10 +571,12 @@ class OnlineHDP(OnlineDP):
 
             ## update group parameter m_var_phi
             ## notice: the natual parameter is log(var_phi)
-            log_m_var_phi = np.log(group.m_var_phi)
+            eps = 1.0e-100
+            log_m_var_phi = np.log(group.m_var_phi + eps)
             log_m_var_phi = (1 - rhot) * log_m_var_phi + rhot * log_var_phi
             group.m_var_phi = np.exp(log_m_var_phi)
 
+        group.update_timect += 1
         # compute likelihood
         # var_phi part/ C in john's notation
         likelihood = 0.0

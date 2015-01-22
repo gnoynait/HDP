@@ -67,9 +67,10 @@ for i, (clf, title) in enumerate([
 plt.show()
 """
 
-def plot(axis, model, X, title, lim = None, show = 'md'):
+def plot(axis, model, X, title, lim = None, show = 'md', Y_ = None):
     color_iter = itertools.cycle(['r', 'g', 'b', 'c', 'm', 'y', 'k'])
-    Y_ = model.predict(X)
+    if Y_ is None:
+        Y_ = model.predict(X)
     for i, (mean, cov, col) in enumerate(zip(
             model.m_mean, model.get_cov(), color_iter)):
         v, w = linalg.eigh(cov)
@@ -135,13 +136,18 @@ def gen_grid_data(n):
 	x = np.vstack((x1, x2))
 	np.random.shuffle(x)
 	return x
+def gen_grid_dataset(datadir, m, n):
+    import os
+    file_name = 'data%d'
+    for i in range(m):
+        X = gen_grid_data(n)
+        np.savetxt(os.path.join(datadir, file_name % i), X)
 
 def show_grid():
     np.random.seed(1)
     random.seed(1)
     T = 80
     K = 10
-    D = 501
     mode = 'spherical'
     batch_size = 50
     kappa = 0.75
@@ -151,10 +157,11 @@ def show_grid():
     dim = 2
     dp = OnlineDP(T, gamma, kappa, tau, total, dim, mode)
     alpha = 0.5
-    hdp = OnlineHDP(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
+    hdp = OnlineHDP(T, K, alpha, gamma, kappa, tau, total, dim, mode)
     X = np.array([0, 0], dtype = 'float64')
+    update_round = 200
 
-    for i in range(D):
+    for i in range(update_round):
         #print i
         cops = [gen_grid_data(batch_size), gen_grid_data(batch_size),
             gen_grid_data(batch_size),gen_grid_data(batch_size)]
@@ -249,6 +256,50 @@ def show_comp():
 
     plt.show()
 
-show_cosine()
-show_grid()
-show_comp()
+def show_file_grid():
+    T = 20
+    K = 10 
+    batch_size = 100
+    process_round = 250
+
+    gamma = 1.0 
+    alpha = 1.0
+    kappa = 0.7
+    tau = 1
+    dim = 2
+    var_converge = 0.00001
+    total = 10000
+    #mode = 'semi-spherical'
+    mode = 'spherical'
+    #mode = 'diagonal'
+    #mode = 'full'
+    gen_grid_dataset('data', 10, 200)
+    hdp = OnlineHDP(
+        T, K, alpha, gamma, kappa, tau, total, dim, mode)
+    import os
+    dataset =[FileData('data/' + f) for f in os.listdir('data')]
+    groups = [Group(
+                alpha, K, 10000, 100, d, coldstart=True, online=False) \
+                for d in dataset]
+    for i in range(process_round):
+        hdp.process_groups(groups)
+    X = []
+    Y = []
+    for g in groups:
+        sample = g.sample()
+        X.append(sample)
+        #Y.append(hdp.predict(sample, group = g))
+        Y.append(hdp.predict(sample))
+    X = np.vstack(X)
+    Y = np.vstack(Y)
+    lim = [-10, 10, -10, 10]
+    #plot(plt.subplot(221), dp, X, 'DP', lim, 'd')
+    #plot(plt.subplot(222), dp, X, 'DP', lim, 'm')
+    import test_hdp
+    test_hdp.plot(plt.subplot(223), hdp, X, Y, 'HDP', lim, 'd')
+    test_hdp.plot(plt.subplot(224), hdp, X, Y, 'HDP', lim, 'm')
+    plt.show()
+show_file_grid()
+#show_cosine()
+#show_grid()
+#show_comp()
