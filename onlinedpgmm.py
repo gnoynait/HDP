@@ -54,12 +54,12 @@ def expect_log_sticks(sticks):
     Elogsticks[1:] = Elogsticks[1:] + np.cumsum(Elog1_W)
     return Elogsticks 
 
-class suff_stats:
-    def __init__(self, T, dim, size, mode):
+class SuffStats:
+    def __init__(self, T, dim, mode):
         # T: top level topic number
         # dim: dimension
         # size: batch size
-        self.batchsize = size
+        self.batchsize = 0
         self.var_stick = np.zeros(T) 
         self.var_x0 = np.zeros(T)
         self.var_x1 = np.zeros((T, dim))
@@ -74,59 +74,30 @@ class suff_stats:
         else:
             raise NoSuchModeError
 
-class Data:
-    def __init__(self):
-        pass
-    def next(self):
-        """
-        return next point
-        """
-        pass
-    def sampele(self, n):
-        """
-        sample n points
-        """
-        pass
-    def reset(self):
-        """
-        reset from the begining
-        """
-        pass
 
-class StreamData(Data):
-    def __init__(self, stream, parse_func = None):
-        self.stream = stream
-    def next(self):
-        if not parse_func:
-            return parse_func(self.stream)
-        line = self.stream.readline().strip()
-        x = [float(r) for r in line.split()]
-        return np.array(x)
+class FileData:
+    def __init__(self, fname):
+        self.dfile = open(fname)
+        self.count = 0
     def sample(self, n):
-        sample = []
+        samples = []
         for i in range(n):
-            sample.append(self.next())
-        return np.array(sample)
-    def reset(self):
-        self.stream.seek(0)
+            line = self.dfile.readline()
+            if not line:
+                self.dfile.seek(0)
+                line = self.dfile.readline()
+            x = [float(r) for r in line.split()]
+            samples.append(x)
+        return np.array(samples)
 
-class ListData(Data):
+class ListData:
     def __init__(self, X):
         self.X = np.copy(X)
-        self._index = 0
-    def next(self):
-        if self._index >= self.X.shape[0]:
-            self._index = 0
-        x = self.X[self._index]
-        self._index += 1
-        return x
     def sample(self, n):
         s = np.random.choice(self.X.shape[0], n)
         return self.X[s,:]
-    def reset(self):
-        self._index = 0
 
-class RandomGaussMixtureData(Data):
+class RandomGaussMixtureData:
     """
     generate Gausssian mixture data
     """
@@ -152,8 +123,14 @@ class RandomGaussMixtureData(Data):
         s = np.arange(n)
         np.random.shuffle(s)
         return data[s]
+    def save_data(self, fname, n):
+        """save n samples to file
+        """
+        X = self.sample(n)
+        np.savetxt(fname, X)
+        
 
-class online_dp:
+class OnlineDP:
     ''' hdp model using stick breaking'''
     def __init__(self, T, gamma, kappa, tau, total, dim, mode):
             #init_mean=None, init_cov=1.0, prior_x0=None):
@@ -317,27 +294,8 @@ class online_dp:
         else:
             raise NoSuchModeError
 
-    def par_to_natural(self, cov, mean, r):
-        raise Exception("don't use this")
-        x = mean * r[:, np.newaxis]
-        if self.mode == 'full':
-            x2 = cov + mean[:, :, np.newaxis] * mean[:, np.newaxis, :]
-            x2 = x2 * r[:, np.newaxis, np.newaxis]
-        elif self.mode == 'diagonal':
-            x2 = 2 * cov + r[:, np.newaxis] * mean * mean
-        elif self.mode == 'spherical':
-            x2 = 2 * cov + r * np.sum(mean * mean, 1)
-        elif self.mode == 'semi-spherical':
-            x2 = (self.m_dim*r + 2) * cov
-        else:
-            raise NoSuchModeError
-        return x2, x
-
     def process_documents(self, cops, var_converge = 0.000001):
-        size = 0
-        for c in cops:
-            size += c.shape[0]
-        ss = suff_stats(self.m_T, self.m_dim, size, self.mode) 
+        ss = SuffStats(self.m_T, self.m_dim, self.mode) 
         Elogsticks_1st = expect_log_sticks(self.var_stick) 
 
         score = 0.0
@@ -359,11 +317,13 @@ class online_dp:
         z = Eloggauss + Elogsticks_1st
         z, norm = log_normalize(z)
         z = np.exp(z)
+        # var_phi equals to z
         self.add_to_sstats(z, z, X, ss)
 
         return likelihood
 
     def add_to_sstats(self, var_phi, z, X, ss):
+        ss.batchsize += z.sum()
         ss.var_stick += np.sum(var_phi, 0)   
         ss.var_x0 += np.sum(z, 0)
         ss.var_x1 += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
@@ -378,7 +338,6 @@ class online_dp:
             x2 = np.sum(X * X, 1)
             ss.var_x2 += np.sum(x2[:,np.newaxis] * z, 0)
         elif self.mode == 'semi-spherical':
-            # TODO: check 0 or 1
             const = self.m_dim / (self.var_x0[:,0] * self.m_precis)
             for n in range(X.shape[0]):
                 dx = X[n][np.newaxis,:] - self.m_mean
@@ -468,7 +427,7 @@ class online_dp:
         cPickle.dump(model, output)
 
 class Group:
-    def __init__(self, alpha, K, size, data, \
+    def __init__(self, alpha, K, size, batchsize, data, \
             coldstart=True, maxiter=100, online=False):
         self.m_alpha = alpha
         self.m_K = k
@@ -479,17 +438,20 @@ class Group:
         self.m_v = None # 2 * (K - 1) array
         self.m_var_phi = None # K * T array
         self.size = size # don't need to be the same the data
+        self.batchsize = batchsize
         self.data = data
         self.update_timect = 1 # times of updating parameter
         self.coldstart = coldstart
         self.maxiter = maxiter
         self.online = online
+    def sample():
+        return self.data.sample(self.batchsize)
     def report(self):
         weight = np.exp(expect_log_sticks(self.m_v))
         print 'weight:' , weight
         print 'varphi:' , self.m_var_phi
         
-class online_hdp(online_dp):
+class OnlineHDP(OnlineDP):
     ''' hdp model using stick breaking'''
     def __init__(self, T, K, D, alpha, gamma, kappa, tau, total, dim, mode):
         """
@@ -501,30 +463,24 @@ class online_hdp(online_dp):
         kappa: learning rate
         tau: slow down parameter
         """
-        online_dp.__init__(self, T, gamma, kappa, tau, total, dim, mode)
+        OnlineDP.__init__(self, T, gamma, kappa, tau, total, dim, mode)
         self.m_K = K # second level truncation
         self.m_alpha = alpha # second level concentration
 
     def process_groups(self, groups):
-        ## should remove batchsize from suff_stats for 
-        ## batch_size = m_rel.sum()
-        ## TODO fix batch_size
-        size = 1000
-        batch_size = 500
-        #for c in groups:
-            #size += c.shape[0]
-        ss = suff_stats(self.m_T, self.m_dim, size, self.mode) 
+        ss = SuffStats(self.m_T, self.m_dim, self.mode) 
         Elogsticks_1st = expect_log_sticks(self.var_stick) 
 
         score = 0.0
         for group in groups:
-            score += self.c_process_group(group, ss, Elogsticks_1st, batch_size)
+            score += self.process_group(group, ss, Elogsticks_1st)
+
         self.update_model(ss)
         return score
 
-    def process_group(self, group, ss, Elogsticks_1st, batch_size,\
+    def process_group(self, group, ss, Elogsticks_1st,\
             var_converge=0.000001, max_iter=20):
-        X = group.data.sample(batch_size)
+        X = group.sample()
 
         if group.coldstart or group.m_v == None or group.m_var_phi == None:
             v = np.zeros((2, group.m_K-1))
@@ -607,7 +563,7 @@ class online_hdp(online_dp):
         else:
             rhot = pow(self.m_tau + group.update_timect, -self.m_kappa)
             group.update_timect += 1
-            scale = float(group.size) / batch_size
+            scale = float(group.size) / group.batchsize
 
             ## update group parameter m_v
             v[0] = 1.0 + scale * np.sum(phi[:,:self.m_K-1], 0)
@@ -699,7 +655,6 @@ class online_hdp(online_dp):
             phi_cum = np.flipud(np.sum(phi[:,1:], 0))
             v[1] = self.m_alpha + np.flipud(np.cumsum(phi_cum))
             Elogsticks_2nd = expect_log_sticks(v)
-            #debug(np.exp(Elogsticks_2nd))
 
             ## TODO: likelihood need complete
             likelihood = 0.0
@@ -723,14 +678,12 @@ class online_hdp(online_dp):
             # X part, the data part
             likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
 
-            #debug(likelihood, old_likelihood)
-
             converge = (likelihood - old_likelihood)/abs(old_likelihood)
             old_likelihood = likelihood
 
             if converge < -0.000001:
                 print "warning, likelihood is decreasing!"
-            
+
             iter += 1
         #debug(iter)    
         # update the suff_stat ss 
@@ -744,7 +697,6 @@ class online_hdp(online_dp):
             res = self.E_log_gauss(X) + Elogsticks_1st
             return res.argmax(axis=1)
 
-        # The following line is of no use.
         Elogsticks_2nd = expect_log_sticks(group.m_v)
         Esticks = np.exp(Elogsticks_2nd)
         weight = np.sum(Esticks[:,np.newaxis] * group.m_var_phi, axis = 0)

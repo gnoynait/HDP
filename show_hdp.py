@@ -119,7 +119,7 @@ def show_cosine():
         ('spherical', 1),
         ('semi-spherical', 1)]
     for i, (mode, gamma) in enumerate(show_case):
-        dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
+        dp = OnlineDP(T, gamma, kappa, tau, total, dim, mode)
         dp.fit(X, batch_size, n_iter)
         plot(plt.subplot(len(show_case), 2, 2*i+1), dp, X, '%s, $\gamma=%g$'%(mode, gamma), lim, 'd')
         plot(plt.subplot(len(show_case), 2, 2*i+2), dp, X, '%s, $\gamma=%g$'%(mode, gamma), lim, 'm')
@@ -149,9 +149,9 @@ def show_grid():
     gamma = 10
     total = 100000
     dim = 2
-    dp = online_dp(T, gamma, kappa, tau, total, dim, mode)
+    dp = OnlineDP(T, gamma, kappa, tau, total, dim, mode)
     alpha = 0.5
-    hdp = online_hdp(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
+    hdp = OnlineHDP(T, K, D, alpha, gamma, kappa, tau, total, dim, mode)
     X = np.array([0, 0], dtype = 'float64')
 
     for i in range(D):
@@ -213,7 +213,7 @@ def show_comp():
     batch_size = 50
     n_iter = 200
     gamma = 1 
-    online_dpgmm = online_dp(T, gamma, kappa, tau, total, dim, mode)
+    online_dpgmm = OnlineDP(T, gamma, kappa, tau, total, dim, mode)
     online_dpgmm.fit(X, batch_size, n_iter)
     lim = [-10, 6, -3, 6]
     plot(plt.subplot(2,2, 4), online_dpgmm,X, 'online DPGMM, %s, $\\alpha=%g$'%(mode, gamma), lim, 'd')
@@ -250,5 +250,5 @@ def show_comp():
     plt.show()
 
 show_cosine()
-#show_grid()
-#show_comp()
+show_grid()
+show_comp()
