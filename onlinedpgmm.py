@@ -41,8 +41,7 @@ def log_normalize(v):
     return (v, log_norm)
 
 def expect_log_sticks(sticks):
-    """
-    For stick-breaking hdp, this returns the E[log(sticks)] 
+    """For stick-breaking hdp, this returns the E[log(sticks)] 
     """
     dig_sum = sp.psi(np.sum(sticks, 0))
     ElogW = sp.psi(sticks[0]) - dig_sum
@@ -55,6 +54,8 @@ def expect_log_sticks(sticks):
     return Elogsticks 
 
 class SuffStats:
+    """sufficient statistics
+    """
     def __init__(self, T, dim, mode):
         # T: top level topic number
         # dim: dimension
@@ -76,8 +77,9 @@ class SuffStats:
 
 
 class FileData:
-    def __init__(self, fname):
+    def __init__(self, fname, parser = None):
         self.dfile = open(fname)
+        self.parser = parser
         self.count = 0
     def sample(self, n):
         samples = []
@@ -86,9 +88,28 @@ class FileData:
             if not line:
                 self.dfile.seek(0)
                 line = self.dfile.readline()
-            x = [float(r) for r in line.split()]
+            if self.parser is None:
+                x = [float(r) for r in line.split()]
+            else:
+                x = self.parser(line)
             samples.append(x)
         return np.array(samples)
+    def reset(self):
+        self.dfile.seek(0)
+    def next_n_record(self, n):
+        titles = []
+        topics = []
+        X = []
+        for line in self.dfile:
+            if line is None or n == 0:
+                break
+            n -= 1
+            record = line.split('##')
+            topics.append(record[0])
+            titles.append(record[1])
+            X.append([float(a) for a in record[2].split()])
+        return topics, titles, np.array(X)
+
 
 class ListData:
     def __init__(self, X):
@@ -98,8 +119,7 @@ class ListData:
         return self.X[s,:]
 
 class RandomGaussMixtureData:
-    """
-    generate Gausssian mixture data
+    """generate Gausssian mixture data
     """
     def __init__(self, weight, mean, cov):
         self.weight = weight
@@ -131,7 +151,7 @@ class RandomGaussMixtureData:
         
 
 class OnlineDP:
-    ''' hdp model using stick breaking'''
+    """Online DP model"""
     def __init__(self, T, gamma, kappa, tau, total, dim, mode):
             #init_mean=None, init_cov=1.0, prior_x0=None):
         """ T: top level truncation level
@@ -427,6 +447,8 @@ class OnlineDP:
         cPickle.dump(model, output)
 
 class Group:
+    """Data group
+    """
     def __init__(self, alpha, K, size, batchsize, data, \
             coldstart=False, maxiter=100, online=True):
         self.m_alpha = alpha
@@ -452,7 +474,7 @@ class Group:
         print 'varphi:' , self.m_var_phi
         
 class OnlineHDP(OnlineDP):
-    ''' hdp model using stick breaking'''
+    """Online HDP Model"""
     def __init__(self, T, K, alpha, gamma, kappa, tau, total, dim, mode):
         """
         gamma: first level concentration
@@ -501,7 +523,7 @@ class OnlineHDP(OnlineDP):
         iter = 0
         while iter < 3 or (iter < group.maxiter \
                 and (converge <= 0.0 or converge > var_converge)):
-            if iter < 5:
+            if iter < 3:
                 var_phi = np.dot(phi.T, Eloggauss)
                 (log_var_phi, log_norm) = log_normalize(var_phi)
                 var_phi = np.exp(log_var_phi)
@@ -511,7 +533,7 @@ class OnlineHDP(OnlineDP):
                 var_phi = np.exp(log_var_phi)
             
             # phi
-            if iter < 5:
+            if iter < 3:
                 phi = np.dot(Eloggauss, var_phi.T)
                 (log_phi, log_norm) = log_normalize(phi)
                 phi = np.exp(log_phi)
@@ -525,7 +547,6 @@ class OnlineHDP(OnlineDP):
             phi_cum = np.flipud(np.sum(phi[:,1:], 0))
             v[1] = self.m_alpha + np.flipud(np.cumsum(phi_cum))
             Elogsticks_2nd = expect_log_sticks(v)
-            #debug(np.exp(Elogsticks_2nd))
 
             ## TODO: likelihood need complete
             likelihood = 0.0
@@ -685,7 +706,6 @@ class OnlineHDP(OnlineDP):
                 print "warning, likelihood is decreasing!"
 
             iter += 1
-        #debug(iter)    
         # update the suff_stat ss 
         z = np.dot(phi, var_phi) 
         self.add_to_sstats(var_phi, z, X, ss)
@@ -700,7 +720,8 @@ class OnlineHDP(OnlineDP):
         Elogsticks_2nd = expect_log_sticks(group.m_v)
         Esticks = np.exp(Elogsticks_2nd)
         weight = np.sum(Esticks[:,np.newaxis] * group.m_var_phi, axis = 0)
-        logweight = np.log(weight)
+        epsilon = 1.0e-100
+        logweight = np.log(weight + epsilon)
         logpost = self.E_log_gauss(X) + logweight[np.newaxis,:]
         return logpost.argmax(axis=1)
 
