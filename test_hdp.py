@@ -150,7 +150,7 @@ def show_grid():
     dim = 2
     var_converge = 0.00001
     total = 10000
-    mode = 'semi-spherical'
+    mode = 'spherical'
     #mode = 'spherical'
     #mode = 'diagonal'
     #mode = 'full'
@@ -188,7 +188,7 @@ def show_grid():
                         [0.0, 0.9, 0.0, 0.1]])
     groups = map(
         lambda w: onlinedpgmm.Group(
-            alpha, K, 10000, 100, 
+            alpha, K, T, 10000, 100, 
                 onlinedpgmm.RandomGaussMixtureData(w, mean, cov),
                 coldstart=True, online=False),
         weight)
@@ -210,4 +210,4 @@ def show_grid():
     plot(plt.subplot(223), hdp, X, Y, 'HDP', lim, 'd')
     plot(plt.subplot(224), hdp, X, Y, 'HDP', lim, 'm')
     plt.show()
-#show__grid()
+show_grid()

@@ -14,7 +14,7 @@ def hdpcluster():
     alpha = 0.1
     kappa = 0.6
     tau = 1
-    total = 200000000000
+    total = 20000000000
     dim = 300
     mode = 'semi-spherical'
     epoch = 500
@@ -26,11 +26,11 @@ def hdpcluster():
     output_file = '/home/pawnty/data/cluster.txt'
 
     hdp = OnlineHDP(T, K, alpha, gamma, kappa, tau, total, dim, mode)
-    hdp.init_par(init_cov=0.001, prior_x0=(1.0, 10000.0))
+    hdp.init_par(init_cov=0.001, prior_x0=(1.0, 1000.0))
 
     input_files = [input_dir + f for f in os.listdir(input_dir)]
     data = [FileData(f, rong_parser) for f in input_files]
-    groups = [Group(alpha, K, size, batchsize, d) for d in data]
+    groups = [Group(alpha, K, T, size, batchsize, d) for d in data]
     for i in range(epoch):
         print 'process %d out of %d' % (i, epoch)
         #hdp.process_groups(random.sample(groups, batchgroup))

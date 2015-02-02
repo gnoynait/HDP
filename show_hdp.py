@@ -150,7 +150,7 @@ def show_grid():
     K = 10
     mode = 'spherical'
     batch_size = 50
-    kappa = 0.75
+    kappa = 0.85
     tau = 1.0
     gamma = 10
     total = 100000
@@ -273,23 +273,23 @@ def show_file_grid():
     mode = 'spherical'
     #mode = 'diagonal'
     #mode = 'full'
-    gen_grid_dataset('data', 10, 200)
+    gen_grid_dataset('data', 100, 2000)
     hdp = OnlineHDP(
         T, K, alpha, gamma, kappa, tau, total, dim, mode)
     import os
     dataset =[FileData('data/' + f) for f in os.listdir('data')]
     groups = [Group(
-                alpha, K, 10000, 100, d, coldstart=True, online=False) \
+                alpha, K, T, 10000, 100, d, coldstart=True, online=False) \
                 for d in dataset]
     for i in range(process_round):
-        hdp.process_groups(groups)
+        hdp.process_groups(random.sample(groups, 5))
     X = []
     Y = []
     for g in groups:
         sample = g.sample()
         X.append(sample)
-        #Y.append(hdp.predict(sample, group = g))
-        Y.append(hdp.predict(sample))
+        Y.append(hdp.predict(sample, group = g))
+        #Y.append(hdp.predict(sample))
     X = np.vstack(X)
     Y = np.vstack(Y)
     lim = [-10, 10, -10, 10]

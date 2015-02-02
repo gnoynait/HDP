@@ -337,14 +337,14 @@ class OnlineDP:
         z = Eloggauss + Elogsticks_1st
         z, norm = log_normalize(z)
         z = np.exp(z)
-        # var_phi equals to z
+        # varphi equals to z
         self.add_to_sstats(z, z, X, ss)
 
         return likelihood
 
-    def add_to_sstats(self, var_phi, z, X, ss):
+    def add_to_sstats(self, varphi, z, X, ss):
         ss.batchsize += z.sum()
-        ss.var_stick += np.sum(var_phi, 0)   
+        ss.var_stick += np.sum(varphi, 0)   
         ss.var_x0 += np.sum(z, 0)
         ss.var_x1 += np.sum(X[:,np.newaxis,:] * z[:,:,np.newaxis], axis = 0)
         if self.mode == 'full':
@@ -449,16 +449,16 @@ class OnlineDP:
 class Group:
     """Data group
     """
-    def __init__(self, alpha, K, size, batchsize, data, \
+    def __init__(self, alpha, K, T, size, batchsize, data, \
             coldstart=False, maxiter=100, online=True):
         self.m_alpha = alpha
-        self.m_K = K
-        #v = np.zeros((2, self.m_K - 1))
-        #v[0] = 1.0
-        #v[1] = alpha
-        #self.m_v = v
-        self.m_v = None # 2 * (K - 1) array
-        self.m_var_phi = None # K * T array
+        self.m_K = K # second level
+        self.m_T = T # first level
+        v = np.zeros((2, self.m_K - 1))
+        v[0] = 1.0
+        v[1] = alpha
+        self.m_v = v
+        self.m_varphi = np.zeros((K, T)) # K * T array
         self.size = size # don't need to be the same the data
         self.batchsize = batchsize
         self.data = data
@@ -471,7 +471,7 @@ class Group:
     def report(self):
         weight = np.exp(expect_log_sticks(self.m_v))
         print 'weight:' , weight
-        print 'varphi:' , self.m_var_phi
+        print 'varphi:' , self.m_varphi
         
 class OnlineHDP(OnlineDP):
     """Online HDP Model"""
@@ -504,13 +504,14 @@ class OnlineHDP(OnlineDP):
             var_converge=0.000001):
         X = group.sample()
 
-        if group.coldstart or group.m_v is None or group.m_var_phi is None:
+        if group.coldstart:
             v = np.zeros((2, group.m_K-1))
             v[0] = 1.0
             v[1] = group.m_alpha
         else:
             v = group.m_v.copy()
-            var_phi = group.m_var_phi.copy()
+            varphi = group.m_varphi.copy()
+
         Elogsticks_2nd = expect_log_sticks(v)
         Eloggauss = self.E_log_gauss(X)
 
@@ -521,26 +522,16 @@ class OnlineHDP(OnlineDP):
         converge = 1.0 
         eps = 1e-100
         iter = 0
-        while iter < 3 or (iter < group.maxiter \
-                and (converge <= 0.0 or converge > var_converge)):
-            if iter < 3:
-                var_phi = np.dot(phi.T, Eloggauss)
-                (log_var_phi, log_norm) = log_normalize(var_phi)
-                var_phi = np.exp(log_var_phi)
-            else:
-                var_phi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
-                (log_var_phi, log_norm) = log_normalize(var_phi)
-                var_phi = np.exp(log_var_phi)
+        while iter < group.maxiter and (converge <= 0.0 or converge > var_converge):
+            # varphi
+            varphi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
+            (log_varphi, log_norm) = log_normalize(varphi)
+            varphi = np.exp(log_varphi)
             
             # phi
-            if iter < 3:
-                phi = np.dot(Eloggauss, var_phi.T)
-                (log_phi, log_norm) = log_normalize(phi)
-                phi = np.exp(log_phi)
-            else:
-                phi = np.dot(Eloggauss, var_phi.T) + Elogsticks_2nd
-                (log_phi, log_norm) = log_normalize(phi)
-                phi = np.exp(log_phi)
+            phi = np.dot(Eloggauss, varphi.T) + Elogsticks_2nd
+            (log_phi, log_norm) = log_normalize(phi)
+            phi = np.exp(log_phi)
 
             # v
             v[0] = 1.0 + np.sum(phi[:,:self.m_K-1], 0)
@@ -551,8 +542,8 @@ class OnlineHDP(OnlineDP):
             ## TODO: likelihood need complete
             likelihood = 0.0
             # compute likelihood
-            # var_phi part/ C in john's notation
-            likelihood += np.sum((Elogsticks_1st - log_var_phi) * var_phi)
+            # varphi part/ C in john's notation
+            likelihood += np.sum((Elogsticks_1st - log_varphi) * varphi)
 
             # v part/ v in john's notation, john's beta is alpha here
             log_alpha = np.log(self.m_alpha)
@@ -568,7 +559,7 @@ class OnlineHDP(OnlineDP):
             likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
 
             # X part, the data part
-            likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
+            likelihood += np.sum(phi.T * np.dot(varphi, Eloggauss.T))
 
             converge = (likelihood - old_likelihood)/abs(old_likelihood)
             old_likelihood = likelihood
@@ -577,9 +568,10 @@ class OnlineHDP(OnlineDP):
                 print "warning, likelihood is decreasing!"
             
             iter += 1
-        if not group.online or group.m_v is None or group.m_var_phi is None:
+
+        if not group.online:
             group.m_v = v
-            group.m_var_phi = var_phi
+            group.m_varphi = varphi
         else:
             rhot = pow(self.m_tau + group.update_timect, -self.m_kappa)
             scale = float(group.size) / group.batchsize
@@ -590,18 +582,18 @@ class OnlineHDP(OnlineDP):
             v[1] = self.m_alpha + scale * np.flipud(np.cumsum(phi_cum))
             group.m_v = (1 - rhot) * group.m_v + rhot * v
 
-            ## update group parameter m_var_phi
-            ## notice: the natual parameter is log(var_phi)
+            ## update group parameter m_varphi
+            ## notice: the natual parameter is log(varphi)
             eps = 1.0e-100
-            log_m_var_phi = np.log(group.m_var_phi + eps)
-            log_m_var_phi = (1 - rhot) * log_m_var_phi + rhot * log_var_phi
-            group.m_var_phi = np.exp(log_m_var_phi)
+            log_m_varphi = np.log(group.m_varphi + eps)
+            log_m_varphi = (1 - rhot) * log_m_varphi + rhot * log_varphi
+            group.m_varphi = np.exp(log_m_varphi)
 
         group.update_timect += 1
         # compute likelihood
-        # var_phi part/ C in john's notation
+        # varphi part/ C in john's notation
         likelihood = 0.0
-        likelihood += np.sum((Elogsticks_1st - log_var_phi) * var_phi)
+        likelihood += np.sum((Elogsticks_1st - log_varphi) * varphi)
 
         # v part/ v in john's notation, john's beta is alpha here
         log_alpha = np.log(self.m_alpha)
@@ -615,10 +607,10 @@ class OnlineHDP(OnlineDP):
         likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
 
         # X part, the data part
-        likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
+        likelihood += np.sum(phi.T * np.dot(varphi, Eloggauss.T))
         # update the suff_stat ss 
-        z = np.dot(phi, var_phi) 
-        self.add_to_sstats(var_phi, z, X, ss)
+        z = np.dot(phi, varphi) 
+        self.add_to_sstats(varphi, z, X, ss)
         return likelihood
 
     def doc_e_step(self, X, ss, Elogsticks_1st, var_converge, max_iter=100):
@@ -651,23 +643,23 @@ class OnlineHDP(OnlineDP):
                 and (converge <= 0.0 or converge > var_converge)):
         #while iter < max_iter:
             ### update variational parameters
-            # var_phi 
+            # varphi 
             if iter < 5:
-                var_phi = np.dot(phi.T, Eloggauss)
-                (log_var_phi, log_norm) = log_normalize(var_phi)
-                var_phi = np.exp(log_var_phi)
+                varphi = np.dot(phi.T, Eloggauss)
+                (log_varphi, log_norm) = log_normalize(varphi)
+                varphi = np.exp(log_varphi)
             else:
-                var_phi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
-                (log_var_phi, log_norm) = log_normalize(var_phi)
-                var_phi = np.exp(log_var_phi)
+                varphi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
+                (log_varphi, log_norm) = log_normalize(varphi)
+                varphi = np.exp(log_varphi)
             
             # phi
             if iter < 5:
-                phi = np.dot(Eloggauss, var_phi.T)
+                phi = np.dot(Eloggauss, varphi.T)
                 (log_phi, log_norm) = log_normalize(phi)
                 phi = np.exp(log_phi)
             else:
-                phi = np.dot(Eloggauss, var_phi.T) + Elogsticks_2nd
+                phi = np.dot(Eloggauss, varphi.T) + Elogsticks_2nd
                 (log_phi, log_norm) = log_normalize(phi)
                 phi = np.exp(log_phi)
 
@@ -680,8 +672,8 @@ class OnlineHDP(OnlineDP):
             ## TODO: likelihood need complete
             likelihood = 0.0
             # compute likelihood
-            # var_phi part/ C in john's notation
-            likelihood += np.sum((Elogsticks_1st - log_var_phi) * var_phi)
+            # varphi part/ C in john's notation
+            likelihood += np.sum((Elogsticks_1st - log_varphi) * varphi)
 
             # v part/ v in john's notation, john's beta is alpha here
             log_alpha = np.log(self.m_alpha)
@@ -697,7 +689,7 @@ class OnlineHDP(OnlineDP):
             likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
 
             # X part, the data part
-            likelihood += np.sum(phi.T * np.dot(var_phi, Eloggauss.T))
+            likelihood += np.sum(phi.T * np.dot(varphi, Eloggauss.T))
 
             converge = (likelihood - old_likelihood)/abs(old_likelihood)
             old_likelihood = likelihood
@@ -707,8 +699,8 @@ class OnlineHDP(OnlineDP):
 
             iter += 1
         # update the suff_stat ss 
-        z = np.dot(phi, var_phi) 
-        self.add_to_sstats(var_phi, z, X, ss)
+        z = np.dot(phi, varphi) 
+        self.add_to_sstats(varphi, z, X, ss)
         return likelihood
 
     def predict(self, X, group = None):
@@ -719,7 +711,7 @@ class OnlineHDP(OnlineDP):
 
         Elogsticks_2nd = expect_log_sticks(group.m_v)
         Esticks = np.exp(Elogsticks_2nd)
-        weight = np.sum(Esticks[:,np.newaxis] * group.m_var_phi, axis = 0)
+        weight = np.sum(Esticks[:,np.newaxis] * group.m_varphi, axis = 0)
         epsilon = 1.0e-100
         logweight = np.log(weight + epsilon)
         logpost = self.E_log_gauss(X) + logweight[np.newaxis,:]
