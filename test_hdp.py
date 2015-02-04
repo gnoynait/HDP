@@ -190,7 +190,7 @@ def show_grid():
         lambda w: onlinedpgmm.Group(
             alpha, K, T, 10000, 100, 
                 onlinedpgmm.RandomGaussMixtureData(w, mean, cov),
-                coldstart=True, online=False),
+                coldstart=True, online=True),
         weight)
                         
     for i in range(process_round):

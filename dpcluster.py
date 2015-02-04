@@ -6,10 +6,10 @@ def rong_parser(line):
 
 def dpcluster():
     T = 100
-    gamma = 1
+    gamma = 1 
     kappa = 0.6
     tau = 1
-    total = 20000000000
+    total = 7800
     dim = 300
     mode = 'semi-spherical'
     epoch = 400
@@ -19,7 +19,7 @@ def dpcluster():
     output_file = '/home/pawnty/data/cluster.txt'
 
     dp = OnlineDP(T, gamma, kappa, tau, total, dim, mode)
-    dp.init_par(init_cov=0.001, prior_x0=(1, 1000))
+    dp.init_par(init_cov=0.004, prior_x0=(1, 100))
     data = FileData(input_file, rong_parser)
     for i in range(epoch):
         print 'process %d out of %d' % (i, epoch)

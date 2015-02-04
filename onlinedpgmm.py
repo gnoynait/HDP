@@ -81,6 +81,15 @@ class FileData:
         self.dfile = open(fname)
         self.parser = parser
         self.count = 0
+    def size(self):
+        self.dfile.seek(0)
+        s = 0
+        line = self.dfile.readline()
+        while line != '':
+            s += 1
+            line = self.dfile.readline()
+        return s
+            
     def sample(self, n):
         samples = []
         for i in range(n):
@@ -581,13 +590,17 @@ class OnlineHDP(OnlineDP):
             phi_cum = np.flipud(np.sum(phi[:,1:], 0))
             v[1] = self.m_alpha + scale * np.flipud(np.cumsum(phi_cum))
             group.m_v = (1 - rhot) * group.m_v + rhot * v
-
+            
+            ## TODO: which version is right??
             ## update group parameter m_varphi
             ## notice: the natual parameter is log(varphi)
+            """
             eps = 1.0e-100
             log_m_varphi = np.log(group.m_varphi + eps)
             log_m_varphi = (1 - rhot) * log_m_varphi + rhot * log_varphi
             group.m_varphi = np.exp(log_m_varphi)
+            """
+            group.m_varphi = (1 - rhot) * group.m_varphi + rhot * varphi
 
         group.update_timect += 1
         # compute likelihood
@@ -703,7 +716,7 @@ class OnlineHDP(OnlineDP):
         self.add_to_sstats(varphi, z, X, ss)
         return likelihood
 
-    def predict(self, X, group = None):
+    def predict(self, X, group=None, trunk=0):
         Elogsticks_1st = expect_log_sticks(self.var_stick) 
         if group is None:
             res = self.E_log_gauss(X) + Elogsticks_1st
@@ -712,6 +725,8 @@ class OnlineHDP(OnlineDP):
         Elogsticks_2nd = expect_log_sticks(group.m_v)
         Esticks = np.exp(Elogsticks_2nd)
         weight = np.sum(Esticks[:,np.newaxis] * group.m_varphi, axis = 0)
+        if trunk > 0:
+            weight[weight.argsort()[:weight.size-trunk]] = 0.0
         epsilon = 1.0e-100
         logweight = np.log(weight + epsilon)
         logpost = self.E_log_gauss(X) + logweight[np.newaxis,:]
