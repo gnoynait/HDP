@@ -106,18 +106,17 @@ class FileData:
     def reset(self):
         self.dfile.seek(0)
     def next_n_record(self, n):
-        titles = []
         topics = []
         X = []
         for line in self.dfile:
             if line is None or n == 0:
                 break
             n -= 1
-            record = line.split('##')
+            record = line.split()
             topics.append(record[0])
-            titles.append(record[1])
-            X.append([float(a) for a in record[2].split()])
-        return topics, titles, np.array(X)
+            #titles.append(record[1])
+            X.append([float(a) for a in record[1:]])
+        return topics, np.array(X)
 
 
 class ListData:
@@ -498,14 +497,16 @@ class OnlineHDP(OnlineDP):
         self.m_K = K # second level truncation
         self.m_alpha = alpha # second level concentration
 
-    def process_groups(self, groups):
+    def process_groups(self, groups, fast=True):
         ss = SuffStats(self.m_T, self.m_dim, self.mode) 
         Elogsticks_1st = expect_log_sticks(self.var_stick) 
 
         score = 0.0
         for group in groups:
-            score += self.process_group(group, ss, Elogsticks_1st)
-
+            if fast:
+                score += self.fast_process_group(group, ss, Elogsticks_1st)
+            else:
+                score += self.process_group(group, ss, Elogsticks_1st)
         self.update_model(ss)
         return score
 
@@ -524,6 +525,7 @@ class OnlineHDP(OnlineDP):
         Elogsticks_2nd = expect_log_sticks(v)
         Eloggauss = self.E_log_gauss(X)
 
+        # bug fix: this is no use
         phi = np.ones((X.shape[0], self.m_K)) / self.m_K
 
         likelihood = 0.0
@@ -536,12 +538,10 @@ class OnlineHDP(OnlineDP):
             varphi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
             (log_varphi, log_norm) = log_normalize(varphi)
             varphi = np.exp(log_varphi)
-            
             # phi
             phi = np.dot(Eloggauss, varphi.T) + Elogsticks_2nd
             (log_phi, log_norm) = log_normalize(phi)
             phi = np.exp(log_phi)
-
             # v
             v[0] = 1.0 + np.sum(phi[:,:self.m_K-1], 0)
             phi_cum = np.flipud(np.sum(phi[:,1:], 0))
@@ -601,6 +601,101 @@ class OnlineHDP(OnlineDP):
             group.m_varphi = np.exp(log_m_varphi)
             """
             group.m_varphi = (1 - rhot) * group.m_varphi + rhot * varphi
+
+        group.update_timect += 1
+        # compute likelihood
+        # varphi part/ C in john's notation
+        likelihood = 0.0
+        likelihood += np.sum((Elogsticks_1st - log_varphi) * varphi)
+
+        # v part/ v in john's notation, john's beta is alpha here
+        log_alpha = np.log(self.m_alpha)
+        likelihood += (self.m_K-1) * log_alpha
+        dig_sum = sp.psi(np.sum(v, 0))
+        likelihood += np.sum((np.array([1.0, self.m_alpha])[:,np.newaxis]-v) \
+            * (sp.psi(v)-dig_sum))
+        likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) - np.sum(sp.gammaln(v))
+
+        # Z part 
+        likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
+
+        # X part, the data part
+        likelihood += np.sum(phi.T * np.dot(varphi, Eloggauss.T))
+        # update the suff_stat ss 
+        z = np.dot(phi, varphi) 
+        self.add_to_sstats(varphi, z, X, ss)
+        return likelihood
+
+    def fast_process_group(self, group, ss, Elogsticks_1st):
+        X = group.sample()
+
+        v = group.m_v.copy()
+        varphi = group.m_varphi.copy()
+
+        Elogsticks_2nd = expect_log_sticks(v)
+        Eloggauss = self.E_log_gauss(X)
+
+        #phi = np.ones((X.shape[0], self.m_K)) / self.m_K
+
+        likelihood = 0.0
+        old_likelihood = -1e100
+        converge = 1.0 
+        eps = 1e-100
+        # phi
+        phi = np.dot(Eloggauss, varphi.T) + Elogsticks_2nd
+        (log_phi, log_norm) = log_normalize(phi)
+        phi = np.exp(log_phi)
+        # varphi
+        varphi = np.dot(phi.T,  Eloggauss) + Elogsticks_1st
+        (log_varphi, log_norm) = log_normalize(varphi)
+        varphi = np.exp(log_varphi)
+        # v
+        v[0] = 1.0 + np.sum(phi[:,:self.m_K-1], 0)
+        phi_cum = np.flipud(np.sum(phi[:,1:], 0))
+        v[1] = self.m_alpha + np.flipud(np.cumsum(phi_cum))
+        Elogsticks_2nd = expect_log_sticks(v)
+
+        ## TODO: likelihood need complete
+        likelihood = 0.0
+        # compute likelihood
+        # varphi part/ C in john's notation
+        likelihood += np.sum((Elogsticks_1st - log_varphi) * varphi)
+
+        # v part/ v in john's notation, john's beta is alpha here
+        log_alpha = np.log(self.m_alpha)
+        likelihood += (self.m_K-1) * log_alpha
+        dig_sum = sp.psi(np.sum(v, 0))
+        likelihood += np.sum(\
+            (np.array([1.0, self.m_alpha])[:,np.newaxis]-v) *\
+                (sp.psi(v)-dig_sum))
+        likelihood -= np.sum(sp.gammaln(np.sum(v, 0))) \
+            - np.sum(sp.gammaln(v))
+
+        # Z part 
+        likelihood += np.sum((Elogsticks_2nd - log_phi) * phi)
+
+        # X part, the data part
+        likelihood += np.sum(phi.T * np.dot(varphi, Eloggauss.T))
+
+        rhot = pow(self.m_tau + group.update_timect, -self.m_kappa)
+        scale = float(group.size) / group.batchsize
+
+        ## update group parameter m_v
+        v[0] = 1.0 + scale * np.sum(phi[:,:self.m_K-1], 0)
+        phi_cum = np.flipud(np.sum(phi[:,1:], 0))
+        v[1] = self.m_alpha + scale * np.flipud(np.cumsum(phi_cum))
+        group.m_v = (1 - rhot) * group.m_v + rhot * v
+        
+        ## TODO: which version is right??
+        ## update group parameter m_varphi
+        ## notice: the natual parameter is log(varphi)
+        """
+        eps = 1.0e-100
+        log_m_varphi = np.log(group.m_varphi + eps)
+        log_m_varphi = (1 - rhot) * log_m_varphi + rhot * log_varphi
+        group.m_varphi = np.exp(log_m_varphi)
+        """
+        group.m_varphi = (1 - rhot) * group.m_varphi + rhot * varphi
 
         group.update_timect += 1
         # compute likelihood

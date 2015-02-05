@@ -126,8 +126,8 @@ def show_cosine():
         plot(plt.subplot(len(show_case), 2, 2*i+2), dp, X, '%s, $\gamma=%g$'%(mode, gamma), lim, 'm')
     plt.show()
 
-def gen_grid_data(n):
-	width, height = 5, 5
+def gen_grid_data(n, w=5):
+	width, height = w, w
 	comp1 = int(np.random.uniform() * n)
 	comp2 = n - comp1
 	means = np.array(np.random.uniform(size = (2, 2)) * 5, dtype = "int") - 2
@@ -140,7 +140,7 @@ def gen_grid_dataset(datadir, m, n):
     import os
     file_name = 'data%d'
     for i in range(m):
-        X = gen_grid_data(n)
+        X = gen_grid_data(n, 2)
         np.savetxt(os.path.join(datadir, file_name % i), X)
 
 def show_grid():
@@ -260,15 +260,14 @@ def show_file_grid():
     T = 20
     K = 10 
     batch_size = 100
-    process_round = 250
+    process_round = 150
 
     gamma = 1.0 
     alpha = 1.0
     kappa = 0.7
     tau = 1
     dim = 2
-    var_converge = 0.00001
-    total = 10000
+    total = 10000000
     #mode = 'semi-spherical'
     mode = 'spherical'
     #mode = 'diagonal'
@@ -276,13 +275,14 @@ def show_file_grid():
     gen_grid_dataset('data', 100, 2000)
     hdp = OnlineHDP(
         T, K, alpha, gamma, kappa, tau, total, dim, mode)
+    #hdp.init_par(init_cov=0.05, prior_x0=(1,100000000.0))
     import os
     dataset =[FileData('data/' + f) for f in os.listdir('data')]
     groups = [Group(
                 alpha, K, T, 10000, 100, d, coldstart=True, online=False) \
                 for d in dataset]
     for i in range(process_round):
-        hdp.process_groups(random.sample(groups, 5))
+        hdp.process_groups(groups, fast=True)
     X = []
     Y = []
     for g in groups:
@@ -299,7 +299,7 @@ def show_file_grid():
     test_hdp.plot(plt.subplot(223), hdp, X, Y, 'HDP', lim, 'd')
     test_hdp.plot(plt.subplot(224), hdp, X, Y, 'HDP', lim, 'm')
     plt.show()
-#show_file_grid()
-#show_cosine()
+show_file_grid()
+show_cosine()
 show_grid()
-#show_comp()
+show_comp()
