@@ -3,6 +3,7 @@ import sys
 from onlinedpgmm import *
 import os
 import random
+print "shouldn't use this"
 def rong_parser(line):
     record = line.split('##')
     return [float(a) for a in record[2].split()]

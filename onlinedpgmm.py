@@ -120,8 +120,11 @@ class FileData:
 
 
 class ListData:
-    def __init__(self, X):
-        self.X = np.copy(X)
+    def __init__(self, data):
+        """data is a 2-dim list"""
+        self.X = np.array(data)
+    def size(self):
+        return len(self.X)
     def sample(self, n):
         s = np.random.choice(self.X.shape[0], n)
         return self.X[s,:]

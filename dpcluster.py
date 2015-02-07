@@ -1,5 +1,6 @@
 import numpy as np
 from onlinedpgmm import *
+print "shouldn't use this"
 def rong_parser(line):
     record = line.split('##')
     return [float(a) for a in record[2].split()]
