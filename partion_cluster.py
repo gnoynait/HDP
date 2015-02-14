@@ -1,5 +1,6 @@
 import numpy as np
 from collections import defaultdict
+from collections import Counter
 import sys
 from onlinedpgmm import *
 import os
@@ -7,18 +8,37 @@ import random
 import sys
 from sklearn import metrics
 
-def load_data(fname):
-    group = defaultdict(list)
+def split(record, p):
+    res = []
+    for i in range(0, len(record), (len(record) + p - 1) / p):
+        res.append(record[i: min(i + p, len(record))])
+    return res
+
+def load_data(fname, p, q):
+    klass = defaultdict(list)
     with open(fname) as f:
         for line in f:
             record = line.strip().split()
+            k = record[0]
             x = [float(a) for a in record[1:]]
-            group[record[0]].append(x)
-    return group.values()
+            klass[k].append((k, x))
+    trunk = []
+    for records in klass.values():
+        trunk.extend(split(records, p))
+    random.shuffle(trunk)
+    group = []
+    label = []
+    while len(trunk) > 0:
+        g = []
+        for i in range(min(q, len(trunk))):
+            g.extend(trunk.pop())
+        group.append([r[1] for r in g])
+        label.extend([r[0] for r in g])
+    return label, group
 
 def hdpcluster(fname):
-    T = 250
-    K = 5 
+    T = 200
+    K = 3 
     gamma = 5
     alpha = 1
     kappa = 0.6
@@ -27,10 +47,13 @@ def hdpcluster(fname):
     dim = 300
     mode = 'semi-spherical'
     epoch = 50 #control number of iteration
-    batchsize = 20 # control #samples in a batch
+    batchsize = 2 # control #samples in a batch
     batchgroup = 3 # control #groups processed in one iteration
+    p = 2 # split each class to p trunks
+    q = 2 # combine q trunks to a new group
 
-    data = [ListData(d) for d in load_data(fname)]
+    labels_true, data = load_data(fname, p, q)
+    data = [ListData(d) for d in data]
     sample = []
     for d in data:
         X = d.sample(int(2 * T/len(data)))
@@ -44,16 +67,14 @@ def hdpcluster(fname):
     del sample
     for i in range(epoch):
         print '\rprocess %d out of %d' % (i, epoch),
-        #hdp.process_groups(groups)
-        hdp.process_groups(random.sample(groups, batchgroup))
+        #hdp.process_groups(random.sample(groups, batchgroup))
+        hdp.process_groups(groups)
     print '\nfinished'
 
-    labels_true = []
     labels_pred = []
-    for l, group in enumerate(groups):
+    for group in groups:
         X = group.data.X
         Y = hdp.predict(X, group).tolist()
-        labels_true.extend([l] * len(X))
         labels_pred.extend(Y)
     return labels_true, labels_pred
 
