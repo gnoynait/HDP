@@ -197,7 +197,6 @@ class OnlineDP:
     def init_par(self, init_mean=None, init_cov=1, prior_x0=None):
         ## the prior of each gaussian
         if init_mean is None or init_mean.shape != (self.m_T, self.m_dim):
-            print 'random init mean'
             self.m_mean = np.random.normal(0, 1, (self.m_T, self.m_dim))
         else:
             np.random.shuffle(init_mean)

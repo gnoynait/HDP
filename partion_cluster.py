@@ -9,9 +9,10 @@ import sys
 from sklearn import metrics
 
 def split(record, p):
+    size = (len(record) + p - 1) / p
     res = []
-    for i in range(0, len(record), (len(record) + p - 1) / p):
-        res.append(record[i: min(i + p, len(record))])
+    for i in range(0, len(record), size):
+        res.append(record[i: min(i + size, len(record))])
     return res
 
 def load_data(fname, p, q):
@@ -36,28 +37,26 @@ def load_data(fname, p, q):
         label.extend([r[0] for r in g])
     return label, group
 
-def hdpcluster(fname):
-    T = 200
-    K = 3 
-    gamma = 5
+def hdpcluster(fname,dim, p, q):
+    #p  split each class to p trunks
+    #q  combine q trunks to a new group
+    T = 100 
+    K = 10
+    gamma = 1
     alpha = 1
     kappa = 0.6
     tau = 1
-    total = 2500000
-    dim = 300
+    total = 100000
     mode = 'semi-spherical'
-    epoch = 50 #control number of iteration
+    epoch = 100 #control number of iteration
     batchsize = 2 # control #samples in a batch
     batchgroup = 3 # control #groups processed in one iteration
-    p = 2 # split each class to p trunks
-    q = 2 # combine q trunks to a new group
 
     labels_true, data = load_data(fname, p, q)
     data = [ListData(d) for d in data]
     sample = []
     for d in data:
-        X = d.sample(int(2 * T/len(data)))
-        sample.append(X)
+        sample.append(d.X)
     sample = np.vstack(sample)
     np.random.shuffle(sample)
     groups = [Group(alpha, K, T, d.size(), batchsize, d) for d in data]
@@ -69,7 +68,7 @@ def hdpcluster(fname):
         print '\rprocess %d out of %d' % (i, epoch),
         #hdp.process_groups(random.sample(groups, batchgroup))
         hdp.process_groups(groups)
-    print '\nfinished'
+    print
 
     labels_pred = []
     for group in groups:
@@ -81,12 +80,15 @@ def hdpcluster(fname):
 
 if __name__ == '__main__':
     fname = sys.argv[1]
-    labels_true, labels_pred = hdpcluster(fname)
-    print 'CN:\t',  len(set(labels_pred))
+    dim = int(sys.argv[2])
+    p = int(sys.argv[3])
+    q = int(sys.argv[4])
+    labels_true, labels_pred = hdpcluster(fname, dim, p, q)
+    print 'CN:\t',  len(set(labels_pred)), len(set(labels_true))
     print 'ARI:\t', metrics.adjusted_rand_score(labels_true, labels_pred)
     #print 'MI:\t', metrics.mutual_info_score(labels_true, labels_pred)
     print 'AMI:\t', metrics.adjusted_mutual_info_score(labels_true, labels_pred)
     print 'NMI:\t', metrics.normalized_mutual_info_score(labels_true, labels_pred)
-    #print 'HOM:\t', metrics.homogeneity_score(labels_true, labels_pred)
-    #print 'COM:\t', metrics.completeness_score(labels_true, labels_pred)
-    print 'VME:\t', metrics.v_measure_score(labels_true, labels_pred)
+    print 'HOM:\t', metrics.homogeneity_score(labels_true, labels_pred)
+    print 'COM:\t', metrics.completeness_score(labels_true, labels_pred)
+    #print 'VME:\t', metrics.v_measure_score(labels_true, labels_pred)
