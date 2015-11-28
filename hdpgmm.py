@@ -39,16 +39,16 @@ class FullFactorSpheGaussianMixture:
         self.prec_post2 = np.ones(k) * prec_prior[1]
         self._updateExpectation()
 
-    def update(self, data, assign, rate):
+    def update(self, data, assign, scale, rate):
         stat0 = np.sum(assign, axis=0)
         stat1 = np.dot(assign.T, data)
         stat2 = np.sum(
             np.square(data[:,np.newaxis,:]-self.expc_mean[np.newaxis,:,:]), 
             axis=(0, 2))
-        self.mean_post1 = rate*(self.mean_prior1 + stat1) + (1.0-rate)*self.mean_post1
-        self.mean_post0 = rate*(self.mean_prior0 + stat0) + (1.0-rate)*self.mean_post0
-        self.prec_post2 = rate*(self.prec_prior2 + stat2) + (1.0-rate)*self.prec_post2
-        self.prec_post0 = rate*(self.prec_prior0 + stat2) + (1.0-rate)*self.prec_post0
+        self.mean_post1 = rate*(self.mean_prior1 + scale * stat1) + (1.0-rate)*self.mean_post1
+        self.mean_post0 = rate*(self.mean_prior0 + scale * stat0) + (1.0-rate)*self.mean_post0
+        self.prec_post2 = rate*(self.prec_prior2 + scale * stat2) + (1.0-rate)*self.prec_post2
+        self.prec_post0 = rate*(self.prec_prior0 + scale * stat2) + (1.0-rate)*self.prec_post0
         self._updateExpectation()
 
     def _updateExpectation(self):
@@ -63,6 +63,13 @@ class FullFactorSpheGaussianMixture:
         logprob = dist * self.expc_prec[np.newaxis, :] * 0.5 + self.expc_const[np.newaxis,:]
         return logprob
 
+    def entropy(self):
+        a = self.prec_post0 * 0.5 + 1
+        ents = 0.5 * np.log(2*np.pi*np.e)-0.5* np.log(self.mean_post0) 
+            + a + sp.gammaln(a) - a * sp.psi(a)
+            -0.5*np.log(0.5*self.prec_post2)
+        return np.sum(ents)
+
 class NonBayesianWeight:
     def __init__(self, T):
         self.T = T
@@ -73,6 +80,8 @@ class NonBayesianWeight:
 
     def update(self, z, lr):
         self.weight = lr * z + (1-lr) * self.weight
+    def entropy(self):
+        return 0.0
 
 class DirichletWeight:
     def __init__(self, T, alpha):
@@ -85,8 +94,13 @@ class DirichletWeight:
 
     def update(self, z, lr):
         self.weight = lr * (np.log(z) + self.alpha) + (1.0-lr) * self.weight
+    def entropy(self):
+        s = np.sum(self.weight)
+        b = np.sum(sp.gammaln(self.weight)) - sp.gammaln(s)
+        ent = b + (s - self.T) * sp.psi(s) 
+            - np.sum((self.weight-1)*sp.psi(self.weight))
+        return ent
 
-    
 class StickBreakingWeight:
     def __init__(self, T, alpha):
         self.T = T
@@ -97,9 +111,9 @@ class StickBreakingWeight:
         sticks[1] = alpha
 
         self.sticks = sticks
-        self.varphi = np.zeros(T)
+        self._calcLogWeight()
 
-    def logWeight(self):
+    def _calcLogWeight(self):
         """For stick-breaking hdp, this returns the E[log(sticks)] 
         """
         sticks = self.sticks
@@ -111,16 +125,29 @@ class StickBreakingWeight:
         Elogsticks = np.zeros(n)
         Elogsticks[0:n-1] = ElogW
         Elogsticks[1:] = Elogsticks[1:] + np.cumsum(Elog1_W)
-        return Elogsticks 
+        self.expc_logw =  Elogsticks 
+        
+    def logWeight(self):
+        return self.expc_logw
 
-    def update(self, z, lr):
-        self.varphi = (1.0-lr) * self.varphi + lr * z
-        ## update top level sticks 
-        self.sticks[0] = self.varphi[:self.T-1]  + 1.0
-        varphi_sum = np.flipud(self.varphi[1:])
-        self.sticks[1] = np.flipud(np.cumsum(varphi_sum)) + self.alpha
+    def update(self, z, scale, lr):
+        """
+        z: (T, ) numpy ndarray
+        lr: float
+        """
+        stick0 = scale * z[:self.T-1]  + 1.0
+        ssum = np.flipud(z[1:])
+        stick1 = scale * np.flipud(np.cumsum(ssum)) + self.alpha
+        self.sticks[0] = lr * stick0 + (1.0 - lr) * self.sticks[0]
+        self.sticks[1] = lr * stick1 + (1.0 - lr) * self.sticks[1]
+        self._calcLogWeight()
 
-class OnlineDP:
+    def entropy(self):
+        a, b = self.sticks[0], self.sticks[1]
+        ents = a - np.log(b) + sp.gammaln(a) + (1 - a)*sp.psi(a)
+        return np.sum(ents)
+
+class DPMixture:
     """Online DP model"""
     def __init__(self, T, gamma, kappa, tau, total, dim, model):
             #init_mean=None, init_cov=1.0, prior_x0=None):
@@ -136,8 +163,6 @@ class OnlineDP:
         self.m_gamma = gamma # first level truncation
         self.m_total = total # total ponits
         self.sticks = StickBreaking(alpha, T)
-
-
 
         self.m_dim = dim # the vector dimension
         ## mode: spherical, diagonal, full
@@ -173,11 +198,6 @@ class OnlineDP:
         self.sticks.update(z, rate)
         self.model.update(X, z, rate)
 
-    def save_model(self, output):
-        model = {'sticks':self.var_stick,
-                'means': self.m_mean,
-                'precis':self.m_cov}
-        cPickle.dump(model, output)
 
 class DecaySheduler:
     def __init__(self, tau, kappa, minlr):
