@@ -70,6 +70,17 @@ class FullFactorSpheGaussianMixture:
             -0.5*np.log(0.5*self.prec_post2)
         return np.sum(ents)
 
+    def expectLogLik(self):
+        a = (self.prec_prior0 * 0.5 + 1
+        b = self.prec_prior1 * 0.5
+        mean_prec = self.mean_prior0 * a / b
+        mm = self.mean_prior1 * a / b / mean_prec
+        pm = -0.5*self.dim * np.log(2 * np.pi) + 0.5 * (sp.psi(a)-np.log(b))
+            -0.5 * a / b * np.sum(np.dot(mm, mm.T), axis=1) 
+            -0.5 / self.mean_post0
+        pp = self.prior
+        return np.sum(pm) + np.sum(pp)
+
 class NonBayesianWeight:
     def __init__(self, T):
         self.T = T
@@ -146,6 +157,12 @@ class StickBreakingWeight:
         a, b = self.sticks[0], self.sticks[1]
         ents = a - np.log(b) + sp.gammaln(a) + (1 - a)*sp.psi(a)
         return np.sum(ents)
+    def expectLogLik(self):
+        a, b = self.sticks[0], self.sticks[1]
+        p = np.log(self.alpha)-self.alpha * (a + 2) / b
+        return np.sum(p)
+        
+        
 
 class DPMixture:
     """Online DP model"""
@@ -170,15 +187,10 @@ class DPMixture:
 
     def assign(self, X):
         likelihood = 0.0
-        old_likelihood = -1e100
-        converge = 1.0 
-        eps = 1e-100
-        iter = 0
-
         
         Eloggauss = self.model.calcLogProb(X)
         z = Eloggauss + self.sticks.expectLogSticks()
-        z, norm = log_normalize(z)
+        z, _= log_normalize(z)
         z = np.exp(z)
         # varphi equals to z
 
