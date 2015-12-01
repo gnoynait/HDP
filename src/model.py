@@ -8,6 +8,7 @@ import random
 import cPickle
 from sklearn import cluster
 
+epsilon = 1e-50
 def log_normalize(v):
     ''' return log(sum(exp(v)))'''
     log_max = 100.0
@@ -19,7 +20,29 @@ def log_normalize(v):
     v = v - log_norm[:,np.newaxis]
 
     return (v, log_norm)
+class StandardGaussianMixture:
+    def __init__(self, k, dim, gamma0):
+        self.k = k
+        self.dim = dim
+        self.gamma0 = gamma0
+        self.gamma = np.ones(k) * gamma0
+        self.mu = np.zeros((k, dim))
+    def update(self, X, z, scale, lr):
+        stat0 = scale * np.sum(z, axis=0)
+        stat1 = scale * np.dot(z.T, X)
+        
+        self.gamma = lr * (self.gamma0 + stat0) + (1-lr) * self.gamma
+        self.mu = lr * stat1 + (1.0 - lr) * self.mu
 
+    def calcLogProb(self, X):
+        sqX = np.sum(np.square(X), axis=1)
+        muX = np.sum(self.mu[np.newaxis,:,:] * X[:,np.newaxis,:], axis=2)
+        logprob = -0.5 * sqX[:,np.newaxis] \
+            + muX\
+            + 0.5 * np.sum(np.square(self.mu), axis=1)[np.newaxis, :]\
+            - 0.5 * self.dim * np.log(2 * np.pi)
+        return logprob
+            
 class FullFactorSpheGaussianMixture:
     def __init__(self, k, dim, gamma0, a0, b0):
         """
@@ -40,13 +63,14 @@ class FullFactorSpheGaussianMixture:
         stat1 = scale * np.dot(z.T, X)
         stat2 = scale * np.sum(z * np.sum(np.square(X), axis=1)[:, np.newaxis], axis=0)
         gamma = lr * (self.gamma0 + stat0) + (1-lr) * self.gamma
-        a2minus1 = lr * (self.a0 * 2 - 1 + stat0) + (1-lr) * (self.a * 2 - 1)
+        anat = lr * ((self.dim + 2 * self.a0 - 2) / self.dim + stat0)\
+            + (1-lr) * ((self.dim-2+2*self.a)/self.dim)
         gammanu = lr * stat1 + (1-lr) * self.gamma[:, np.newaxis] * self.nu
         gammasqnuplus2b = lr * (stat2 + self.b0 * 2) \
             + (1-lr) * (self.gamma * np.sum(np.square(self.nu), axis=1) + 2 * self.b)
 
         self.gamma = gamma
-        self.a = 0.5 * (a2minus1 + 1)
+        self.a = 0.5 * (anat * self.dim - self.dim + 2) 
         self.nu = gammanu / gamma[:, np.newaxis]
         self.b = 0.5*(gammasqnuplus2b - np.sum(np.square(gammanu), axis=1) / gamma)
 
@@ -54,10 +78,10 @@ class FullFactorSpheGaussianMixture:
 
     def _updateExpectation(self):
         self.expc_mu = self.nu
-        self.expc_lnlambda = (sp.psi(self.a) - np.log(self.b)) / self.dim
+        self.expc_lnlambda = sp.psi(self.a) - np.log(self.b) 
         self.expc_lambda = self.a / self.b
         self.expc_lambdasqmu = self.expc_lambda * np.sum(np.square(self.nu), axis=1)\
-            + 1.0 / self.gamma
+            + self.dim / self.gamma
 
     def calcLogProb(self, X):
         sqX = np.sum(np.square(X), axis=1)
@@ -82,38 +106,6 @@ class FullFactorSpheGaussianMixture:
             - self.bo * self.expc_lambda + (self.a0 - 0.5) * self.expc_lnlambda\
             + self.a0 * np.log(self.b0)-sp.gammaln(self.a0)
         return np.sum(logp)
-
-class NonBayesianWeight:
-    def __init__(self, T):
-        self.T = T
-        self.weight = np.ones(T) / T
-
-    def logWeight(self):
-        return np.log(self.weight)
-
-    def update(self, z, scale, lr):
-        z = z / np.sum(z)
-        self.weight = lr * z + (1-lr) * self.weight
-    def entropy(self):
-        return 0.0
-
-class DirichletWeight:
-    def __init__(self, T, alpha):
-        self.T = T
-        self.alpha = alpha
-        self.weight = np.ones(T) * alpha
-
-    def logWeight(self):
-        return np.log(self.weight / np.sum(self.weight))
-
-    def update(self, z, lr):
-        self.weight = lr * (np.log(z) + self.alpha) + (1.0-lr) * self.weight
-    def entropy(self):
-        s = np.sum(self.weight)
-        b = np.sum(sp.gammaln(self.weight)) - sp.gammaln(s)
-        ent = b + (s - self.T) * sp.psi(s) \
-            - np.sum((self.weight-1)*sp.psi(self.weight))
-        return ent
 
 class StickBreakingWeight:
     def __init__(self, T, alpha):
@@ -218,11 +210,6 @@ class DecaySheduler:
         self.count += 1
         return lr
 
-class ConstSheduler:
-    def __init__(self, learningRate):
-        self.lr = learningRate
-    def nextRate(self):
-        return self.lr
         
 class Trainer:
     def __init__(self, model, lrSheduler):
@@ -230,5 +217,48 @@ class Trainer:
         self.model = model
     def fit(self, X, n):
         for i in range(n):
-            self.model.update(X, 1.0, self.sheduler.nextRate())
+            split = 100
+            step = (X.shape[0] + split - 1)/ split
+            for s in range(split):
+                start = s * step
+                end = min(start + step, X.shape[0])
+                self.model.update(X[start:end,...], split, self.sheduler.nextRate())
 
+class NonBayesianWeight:
+    def __init__(self, T):
+        self.T = T
+        self.weight = np.ones(T) / T
+
+    def logWeight(self):
+        return np.log(self.weight + epsilon)
+
+    def update(self, z, scale, lr):
+        z = np.sum(z, axis=0)
+        z = z / np.sum(z)
+        self.weight = lr * z + (1-lr) * self.weight
+    def entropy(self):
+        return 0.0
+
+class DirichletWeight:
+    def __init__(self, T, alpha):
+        self.T = T
+        self.alpha = alpha
+        self.weight = np.ones(T) * alpha
+
+    def logWeight(self):
+        return np.log(self.weight / np.sum(self.weight))
+
+    def update(self, z, lr):
+        self.weight = lr * (np.log(z) + self.alpha) + (1.0-lr) * self.weight
+    def entropy(self):
+        s = np.sum(self.weight)
+        b = np.sum(sp.gammaln(self.weight)) - sp.gammaln(s)
+        ent = b + (s - self.T) * sp.psi(s) \
+            - np.sum((self.weight-1)*sp.psi(self.weight))
+        return ent
+
+class ConstSheduler:
+    def __init__(self, learningRate):
+        self.lr = learningRate
+    def nextRate(self):
+        return self.lr
