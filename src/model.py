@@ -20,10 +20,12 @@ def log_normalize(v):
     v = v - log_norm[:,np.newaxis]
 
     return (v, log_norm)
+
 class StandardGaussianMixture:
-    def __init__(self, k, dim, gamma0):
+    def __init__(self, k, dim, gamma0, lmbd):
         self.k = k
         self.dim = dim
+        self.lmbd = lmbd
         self.gamma0 = gamma0
         self.gamma = np.ones(k) * gamma0
         self.mu = np.zeros((k, dim))
@@ -32,15 +34,16 @@ class StandardGaussianMixture:
         stat1 = scale * np.dot(z.T, X)
         
         self.gamma = lr * (self.gamma0 + stat0) + (1-lr) * self.gamma
-        self.mu = lr * stat1 + (1.0 - lr) * self.mu
+
+        self.mu = lr * stat1 / self.gamma[:, np.newaxis] + (1.0 - lr) * self.mu
 
     def calcLogProb(self, X):
-        sqX = np.sum(np.square(X), axis=1)
+        sqX = np.sum(np.square(X), axis=1) 
         muX = np.sum(self.mu[np.newaxis,:,:] * X[:,np.newaxis,:], axis=2)
-        logprob = -0.5 * sqX[:,np.newaxis] \
-            + muX\
-            + 0.5 * np.sum(np.square(self.mu), axis=1)[np.newaxis, :]\
-            - 0.5 * self.dim * np.log(2 * np.pi)
+        logprob = -0.5 * self.lmbd * sqX[:,np.newaxis] -0.5 / self.gamma\
+            + self.lmbd * muX\
+            + 0.5 * self.lmbd * np.sum(np.square(self.mu), axis=1)[np.newaxis, :]\
+            - 0.5 * self.dim * np.log(2 * np.pi / self.lmbd)
         return logprob
             
 class FullFactorSpheGaussianMixture:
@@ -81,7 +84,7 @@ class FullFactorSpheGaussianMixture:
         self.expc_lnlambda = sp.psi(self.a) - np.log(self.b) 
         self.expc_lambda = self.a / self.b
         self.expc_lambdasqmu = self.expc_lambda * np.sum(np.square(self.nu), axis=1)\
-            + self.dim / self.gamma
+               + self.dim / self.gamma
 
     def calcLogProb(self, X):
         sqX = np.sum(np.square(X), axis=1)
@@ -95,6 +98,7 @@ class FullFactorSpheGaussianMixture:
 
     def entropy(self):
         d = self.dim
+        a, b = self.a, self.b
         ents = 0.5 * d * (1 + np.log(2*np.pi/self.gamga)) + sp.gammaln(a) + a\
             - 0.5 * (2 * a - 2 + d) * sp.psi(a) + 0.5 * (d - 2) * np.log(b)
         return np.sum(ents)
@@ -120,6 +124,7 @@ class StickBreakingWeight:
         sticks[1] = alpha
 
         self.sticks = sticks
+        self.update(np.ones((1, T))/T, 100000, 1)
         self._calcLogWeight()
 
     def _calcLogWeight(self):
@@ -194,6 +199,49 @@ class DPMixture:
                 + self.weight.expectLogPrior() + self.model.expectLogPrior()
         return likelihood
 
+class SubDPMixture:
+    """Online DP model"""
+    def __init__(self, T, dim, model, weight):
+        self.model = DPMixture(T, dim, model, weight)
+        self.phi = np.ones((K, T)) / K
+        self.weight = StickBreakingWeight(K, alpha)
+
+    def assign(self, X):
+        pb = self.model.calcLogProb(X)
+        pk = np.dot(pb, self.phi.T)
+        z = pk + self.weight.logWeight()
+        z, _= log_normalize(z)
+        z = np.exp(z)
+        return z
+
+    def predict(self, X):
+        logLik = self.model.calcLogProb(X)
+        post = logLik + self.weight.logWeight()
+        return post.argmax(axis=1)
+
+    def update(self, X, scale, lr):
+        logpt = self.model.calcProb(X)
+        t, _ = log_normalize(logt)
+        t = np.exp(t)
+        logpk = np.dot(logpt, self.phi.T) + self.weight.logWeight()
+        k, _ = log_normalize(logk)
+        k = np.exp(z)
+        self.weight.update(k, scale, lr)
+        newphi = np.dot(k.T, t)
+        newt = np.dot(t.T, k)
+        self.model.update(X, newt, scale, lr)
+        self.phi = lr * newphi + (1 - lr) * newphi
+
+    def logLikelihood(self, X, scale):
+        Eloggauss = self.model.calcLogProb(X)
+        z = Eloggauss + self.weight.logWeight()
+        z, _= log_normalize(z)
+        z = np.exp(z)
+        likelihood = np.sum(z * Eloggauss, axiz=(0,1)) + np.sum(z * self.weight.logWeight()[np.newaxis,:])
+        likelihood += self.weight.entropy() + self.model.entropy()\
+                + self.weight.expectLogPrior() + self.model.expectLogPrior()
+        return likelihood
+
 
 class DecaySheduler:
     def __init__(self, tau, kappa, minlr):
@@ -215,9 +263,8 @@ class Trainer:
     def __init__(self, model, lrSheduler):
         self.sheduler = lrSheduler
         self.model = model
-    def fit(self, X, n):
+    def fit(self, X, n, split):
         for i in range(n):
-            split = 100
             step = (X.shape[0] + split - 1)/ split
             for s in range(split):
                 start = s * step
