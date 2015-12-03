@@ -99,7 +99,7 @@ class FullFactorSpheGaussianMixture:
     def entropy(self):
         d = self.dim
         a, b = self.a, self.b
-        ents = 0.5 * d * (1 + np.log(2*np.pi/self.gamga)) + sp.gammaln(a) + a\
+        ents = 0.5 * d * (1 + np.log(2*np.pi/self.gamma)) + sp.gammaln(a) + a\
             - 0.5 * (2 * a - 2 + d) * sp.psi(a) + 0.5 * (d - 2) * np.log(b)
         return np.sum(ents)
 
@@ -107,7 +107,7 @@ class FullFactorSpheGaussianMixture:
         logp = -0.5 * self.dim * np.log(2 * np.pi) \
             - 0.5 * self.gamma0 * self.expc_lambda * (np.sum(np.square(self.nu), axis=1)) \
             - 0.5 * self.gamma0 / self.gamma + 0.5 * np.log(self.gamma0) \
-            - self.bo * self.expc_lambda + (self.a0 - 0.5) * self.expc_lnlambda\
+            - self.b0 * self.expc_lambda + (self.a0 - 0.5) * self.expc_lnlambda\
             + self.a0 * np.log(self.b0)-sp.gammaln(self.a0)
         return np.sum(logp)
 
@@ -119,11 +119,7 @@ class StickBreakingWeight:
         """
         self.T = T
         self.alpha = alpha
-        sticks = np.zeros((2, T-1))
-        sticks[0] = 1.0
-        sticks[1] = alpha
-
-        self.sticks = sticks
+        self.sticks = np.zeros((2, T-1))
         self.update(np.ones((1, T))/T, 100000, 1)
         self._calcLogWeight()
 
@@ -164,7 +160,7 @@ class StickBreakingWeight:
 
     def expectLogPrior(self):
         logp = np.log(self.alpha) - self.alpha * self.sticks[0] / self.sticks[1]
-        return np.sum(p)
+        return np.sum(logp)
 
 class DPMixture:
     """Online DP model"""
@@ -194,7 +190,7 @@ class DPMixture:
         z = Eloggauss + self.weight.logWeight()
         z, _= log_normalize(z)
         z = np.exp(z)
-        likelihood = np.sum(z * Eloggauss, axiz=(0,1)) + np.sum(z * self.weight.logWeight()[np.newaxis,:])
+        likelihood = np.sum(z * Eloggauss, axis=(0,1)) + np.sum(z * self.weight.logWeight()[np.newaxis,:])
         likelihood += self.weight.entropy() + self.model.entropy()\
                 + self.weight.expectLogPrior() + self.model.expectLogPrior()
         return likelihood
@@ -237,7 +233,7 @@ class SubDPMixture:
         z = Eloggauss + self.weight.logWeight()
         z, _= log_normalize(z)
         z = np.exp(z)
-        likelihood = np.sum(z * Eloggauss, axiz=(0,1)) + np.sum(z * self.weight.logWeight()[np.newaxis,:])
+        likelihood = np.sum(z * Eloggauss, axis=(0,1)) + np.sum(z * self.weight.logWeight()[np.newaxis,:])
         likelihood += self.weight.entropy() + self.model.entropy()\
                 + self.weight.expectLogPrior() + self.model.expectLogPrior()
         return likelihood
@@ -264,12 +260,16 @@ class Trainer:
         self.sheduler = lrSheduler
         self.model = model
     def fit(self, X, n, split):
+        loglik = []
         for i in range(n):
             step = (X.shape[0] + split - 1)/ split
             for s in range(split):
                 start = s * step
                 end = min(start + step, X.shape[0])
-                self.model.update(X[start:end,...], split, self.sheduler.nextRate())
+                x = X[start:end,...]
+                self.model.update(x, split, self.sheduler.nextRate())
+            loglik.append(self.model.logLikelihood(X, 1))
+        return loglik
 
 class NonBayesianWeight:
     def __init__(self, T):

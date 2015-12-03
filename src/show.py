@@ -9,13 +9,13 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.cross_validation import train_test_split
 import model as md
 
-n_samples = 5000
+n_samples = 50000
 centers = [(-25, -25), (-25, 25), (25, -25), (25, 25)]
 X, y = datasets.make_blobs(n_samples=n_samples, n_features=2, cluster_std=10,
                   centers=centers, shuffle=True, random_state=None)
 #X, y = datasets.make_blobs(n_samples=n_samples, n_features=2, cluster_std=1.0, 
 #                  centers=10, shuffle=True, random_state=None)
-T = 40 
+T = 20
 dim = 2
 alpha = 1
 gamma = 0.001
@@ -28,10 +28,11 @@ weight = md.StickBreakingWeight(T, alpha)
 #weight = md.NonBayesianWeight(T)
 model = md.DPMixture(T, dim, base, weight)
     
-sheduler = md.ConstSheduler(1)
-sheduler = md.DecaySheduler(1, 0.7, 0.00001)
+sheduler = md.DecaySheduler(1000, 0.7, 0.001)
 updater = md.Trainer(model, sheduler)
-updater.fit(X, 100, 1000)
+loglik = updater.fit(X, 20, 100)
+plt.plot(loglik)
+plt.figure()
 #print np.exp(weight.logWeight()), base.expc_lambda, base.expc_mu
 #for w, lmbd, mu in zip(np.exp(weight.logWeight()), base.expc_lambda, base.expc_mu):
 #    print w, lmbd, mu
