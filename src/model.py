@@ -1,12 +1,5 @@
 import numpy as np
 import scipy.special as sp
-from scipy import linalg
-import os, sys, math, time
-from scipy.spatial import distance
-from itertools import izip
-import random
-import cPickle
-from sklearn import cluster
 
 epsilon = 1e-50
 def log_normalize(v):
@@ -14,14 +7,14 @@ def log_normalize(v):
     log_max = 100.0
     max_val = np.max(v, 1)
     log_shift = log_max - np.log(v.shape[1]+1.0) - max_val
-    tot = np.sum(np.exp(v + log_shift[:,np.newaxis]), 1)
+    tot = np.sum(np.exp(v + log_shift[:, np.newaxis]), 1)
 
     log_norm = np.log(tot) - log_shift
-    v = v - log_norm[:,np.newaxis]
+    v = v - log_norm[:, np.newaxis]
 
     return (v, log_norm)
 
-class StandardGaussianMixture:
+class StandardGaussianMixture(object):
     def __init__(self, k, dim, gamma0, lmbd):
         self.k = k
         self.dim = dim
@@ -32,21 +25,21 @@ class StandardGaussianMixture:
     def update(self, X, z, scale, lr):
         stat0 = scale * np.sum(z, axis=0)
         stat1 = scale * np.dot(z.T, X)
-        
+
         self.gamma = lr * (self.gamma0 + stat0) + (1-lr) * self.gamma
 
         self.mu = lr * stat1 / self.gamma[:, np.newaxis] + (1.0 - lr) * self.mu
 
-    def calcLogProb(self, X):
+    def logAssign(self, X):
         sqX = np.sum(np.square(X), axis=1) 
-        muX = np.sum(self.mu[np.newaxis,:,:] * X[:,np.newaxis,:], axis=2)
-        logprob = -0.5 * self.lmbd * sqX[:,np.newaxis] -0.5 / self.gamma\
+        muX = np.sum(self.mu[np.newaxis, :, :] * X[:, np.newaxis, :], axis=2)
+        logprob = -0.5 * self.lmbd * sqX[:, np.newaxis] -0.5 / self.gamma\
             + self.lmbd * muX\
             + 0.5 * self.lmbd * np.sum(np.square(self.mu), axis=1)[np.newaxis, :]\
             - 0.5 * self.dim * np.log(2 * np.pi / self.lmbd)
         return logprob
-            
-class FullFactorSpheGaussianMixture:
+
+class FullFactorSpheGaussianMixture(object):
     def __init__(self, k, dim, gamma0, a0, b0):
         """
         precision: lambda ~ Gamma(a, b)
@@ -86,10 +79,10 @@ class FullFactorSpheGaussianMixture:
         self.expc_lambdasqmu = self.expc_lambda * np.sum(np.square(self.nu), axis=1)\
                + self.dim / self.gamma
 
-    def calcLogProb(self, X):
+    def logAssign(self, X):
         sqX = np.sum(np.square(X), axis=1)
-        muX = np.sum(self.expc_mu[np.newaxis,:,:] * X[:,np.newaxis,:], axis=2)
-        logprob = -0.5 * self.expc_lambda * sqX[:,np.newaxis] \
+        muX = np.sum(self.expc_mu[np.newaxis, :, :] * X[:, np.newaxis, :], axis=2)
+        logprob = -0.5 * self.expc_lambda * sqX[:, np.newaxis] \
             + self.expc_lambda * muX\
             + 0.5 * self.expc_lambdasqmu\
             + 0.5 * self.dim * self.expc_lnlambda[np.newaxis, :]\
@@ -111,7 +104,7 @@ class FullFactorSpheGaussianMixture:
             + self.a0 * np.log(self.b0)-sp.gammaln(self.a0)
         return np.sum(logp)
 
-class StickBreakingWeight:
+class StickBreakingWeight(object):
     def __init__(self, T, alpha):
         """
         T: trunction level
@@ -135,8 +128,8 @@ class StickBreakingWeight:
         Elogsticks = np.zeros(n)
         Elogsticks[0:n-1] = ElogW
         Elogsticks[1:] = Elogsticks[1:] + np.cumsum(Elog1_W)
-        self.expc_logw =  Elogsticks 
-        
+        self.expc_logw = Elogsticks 
+
     def logWeight(self):
         """E[log(sticks)"""
         return self.expc_logw
@@ -162,23 +155,25 @@ class StickBreakingWeight:
         logp = np.log(self.alpha) - self.alpha * self.sticks[0] / self.sticks[1]
         return np.sum(logp)
 
-class DPMixture:
+class DPMixture(object):
     """Online DP model"""
     def __init__(self, T, dim, model, weight):
         self.model = model
         self.weight = weight
 
+    def logAssign(self, X):
+        logLik = self.model.logAssign(X)
+        return logLik + self.weight.logWeight() 
+
     def assign(self, X):
-        Eloggauss = self.model.calcLogProb(X)
-        z = Eloggauss + self.weight.logWeight()
-        z, _= log_normalize(z)
-        z = np.exp(z)
+        logz = self.logAssign(X)
+        logz, _ = log_normalize(logz)
+        z = np.exp(logz)
         return z
 
     def predict(self, X):
-        logLik = self.model.calcLogProb(X)
-        post = logLik + self.weight.logWeight()
-        return post.argmax(axis=1)
+        logz = self.logAssign(X)
+        return logz.argmax(axis=1)
 
     def update(self, X, scale, lr):
         z = self.assign(X)
@@ -186,42 +181,47 @@ class DPMixture:
         self.model.update(X, z, scale, lr)
 
     def logLikelihood(self, X, scale):
-        Eloggauss = self.model.calcLogProb(X)
+        Eloggauss = self.model.logAssign(X)
         z = Eloggauss + self.weight.logWeight()
-        z, _= log_normalize(z)
+        z, _ = log_normalize(z)
         z = np.exp(z)
-        likelihood = np.sum(z * Eloggauss, axis=(0,1)) + np.sum(z * self.weight.logWeight()[np.newaxis,:])
+        likelihood = np.sum(z * Eloggauss, axis=(0,1)) \
+            + np.sum(z * self.weight.logWeight()[np.newaxis, :])
         likelihood += self.weight.entropy() + self.model.entropy()\
                 + self.weight.expectLogPrior() + self.model.expectLogPrior()
         return likelihood
 
-class SubDPMixture:
-    """Online DP model"""
-    def __init__(self, T, dim, model, weight):
-        self.model = DPMixture(T, dim, model, weight)
-        self.phi = np.ones((K, T)) / K
+class SubDPMixture(object):
+    """Online HDP model"""
+    def __init__(self, K, dim, alpha, model):
+        self.model = model
+        self.phi = np.ones((K, K)) / K
         self.weight = StickBreakingWeight(K, alpha)
 
+    def logAssign(self, X):
+        logz = self.logAssign(X)
+        logk = np.dot(logz, self.phi.T)
+        logk = self.weight.logWeight() + logk
+        logz = np.dot(logk, self.phi)
+        return logz
+
     def assign(self, X):
-        pb = self.model.calcLogProb(X)
-        pk = np.dot(pb, self.phi.T)
-        z = pk + self.weight.logWeight()
-        z, _= log_normalize(z)
-        z = np.exp(z)
+        logz = self.logAssign(X)
+        logz, _ = log_normalize(logz)
+        z = np.exp(logz)
         return z
 
     def predict(self, X):
-        logLik = self.model.calcLogProb(X)
-        post = logLik + self.weight.logWeight()
-        return post.argmax(axis=1)
+        logz = self.logAssign(X)
+        return logz.argmax(axis=1)
 
     def update(self, X, scale, lr):
-        logpt = self.model.calcProb(X)
+        logt = self.model.logAssign(X)
         t, _ = log_normalize(logt)
         t = np.exp(t)
-        logpk = np.dot(logpt, self.phi.T) + self.weight.logWeight()
+        logk = np.dot(logt, self.phi.T) + self.weight.logWeight()
         k, _ = log_normalize(logk)
-        k = np.exp(z)
+        k = np.exp(k)
         self.weight.update(k, scale, lr)
         newphi = np.dot(k.T, t)
         newt = np.dot(t.T, k)
@@ -229,17 +229,14 @@ class SubDPMixture:
         self.phi = lr * newphi + (1 - lr) * newphi
 
     def logLikelihood(self, X, scale):
-        Eloggauss = self.model.calcLogProb(X)
-        z = Eloggauss + self.weight.logWeight()
-        z, _= log_normalize(z)
-        z = np.exp(z)
-        likelihood = np.sum(z * Eloggauss, axis=(0,1)) + np.sum(z * self.weight.logWeight()[np.newaxis,:])
-        likelihood += self.weight.entropy() + self.model.entropy()\
-                + self.weight.expectLogPrior() + self.model.expectLogPrior()
-        return likelihood
+        loglik = 0
+        loglik += self.weight.entropy() + self.weight.expectLogPrior()\
+            + np.sum(np.dot(self.phi, self.model.weight.logWeight())) \
+            + np.sum(self.phi * np.log(self.phi))
+        return loglik
 
 
-class DecaySheduler:
+class DecaySheduler(object):
     def __init__(self, tau, kappa, minlr):
         ## for online learning
         self.tau = tau
@@ -254,8 +251,7 @@ class DecaySheduler:
         self.count += 1
         return lr
 
-        
-class Trainer:
+class Trainer(object):
     def __init__(self, model, lrSheduler):
         self.sheduler = lrSheduler
         self.model = model
@@ -266,12 +262,12 @@ class Trainer:
             for s in range(split):
                 start = s * step
                 end = min(start + step, X.shape[0])
-                x = X[start:end,...]
+                x = X[start:end, ...]
                 self.model.update(x, split, self.sheduler.nextRate())
             loglik.append(self.model.logLikelihood(X, 1))
         return loglik
 
-class NonBayesianWeight:
+class NonBayesianWeight(object):
     def __init__(self, T):
         self.T = T
         self.weight = np.ones(T) / T
@@ -286,7 +282,7 @@ class NonBayesianWeight:
     def entropy(self):
         return 0.0
 
-class DirichletWeight:
+class DirichletWeight(object):
     def __init__(self, T, alpha):
         self.T = T
         self.alpha = alpha
@@ -304,7 +300,7 @@ class DirichletWeight:
             - np.sum((self.weight-1)*sp.psi(self.weight))
         return ent
 
-class ConstSheduler:
+class ConstSheduler(object):
     def __init__(self, learningRate):
         self.lr = learningRate
     def nextRate(self):
