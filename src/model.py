@@ -15,14 +15,21 @@ def log_normalize(v):
     v -= log_norm[:, np.newaxis]
     return (v, log_norm)
 
+def choose_sample(X, size):
+    n = X.shape[0]
+    if n < size:
+        raise Exception("data set is not enough.")
+    idx = np.random.choice(n, size, replace=False)
+    return X[idx,:]
+
 class StandardGaussianMixture(object):
-    def __init__(self, K, dim, gamma0, lmbd):
+    def __init__(self, K, dim, gamma0, lmbd, X):
         self.K = K
         self.dim = dim
         self.lmbd = lmbd
         self.gamma0 = gamma0
         self.gamma = np.ones(K) * gamma0
-        self.mu = np.random.randn(K, dim)
+        self.mu = choose_sample(X, K)
 
     def update(self, X, scale, lr, z):
         stat0 = scale * np.sum(z, axis=0)
@@ -45,7 +52,7 @@ class StandardGaussianMixture(object):
         return logprob
 
 class FullFactorSpheGaussianMixture(object):
-    def __init__(self, K, dim, gamma0, a0, b0):
+    def __init__(self, K, dim, gamma0, a0, b0, X):
         """
         precision: lambda ~ Gamma(a, b)
         mean: mu ~ Norm(nu, 1/(gamma*lambda))
@@ -54,7 +61,7 @@ class FullFactorSpheGaussianMixture(object):
         self.K = K
         self.gamma0, self.a0, self.b0 = gamma0, a0, b0
         self.gamma = np.ones(K) * gamma0
-        self.nu = np.random.randn(K, dim) * 50
+        self.nu = choose_sample(X, K)
         self.a = np.ones(K) * a0
         self.b = np.ones(K) * b0
         self._updateExpectation()
@@ -120,7 +127,7 @@ class StickBreakingWeight(object):
         self.sticks = np.zeros((2, K - 1))
         self.sticks[0,:] = 1
         self.sticks[1,:] = alpha
-        #self.update(np.ones((1, K)) / K, 100000, 1)
+        self.update(np.ones((1, K)) / K, 100, 1)
         self._calcLogWeight()
 
     def _calcLogWeight(self):

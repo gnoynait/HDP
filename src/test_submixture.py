@@ -7,19 +7,21 @@ from sklearn import datasets
 import model as md
 
 n_samples = 50000
-centers = [(-25, -25), (25, 25), (-25, 25) ]
-X, _ = datasets.make_blobs(n_samples=n_samples, n_features=2, cluster_std=5,
+std = 0.5
+centers = [(-2.5, -2.5), (2.5, 2.5), (-2.5, 2.5), (2.5, -2.5)]
+#centers = [(-2.5+10, -2.5), (2.5+10, 2.5), (-2.5+10, 2.5), (2.5+10, -2.5)]
+X, _ = datasets.make_blobs(n_samples=n_samples, n_features=2, cluster_std=std,
                   centers=centers, shuffle=True, random_state=None)
 sheduler = md.DecaySheduler(100, 0.6, 0.001)
-#sheduler = md.ConstSheduler(1.0)
-base = md.FullFactorSpheGaussianMixture(100, 2, 1, 1000000, 1)
-base = md.StandardGaussianMixture(100, 2, 1, 1)
-model = md.SubDPMixture(100, 10, base)
-for i in range(50):
-    step = 100
+sheduler = md.ConstSheduler(1.0)
+#base = md.FullFactorSpheGaussianMixture(100, 2, 1, 1000000, 1, X)
+base = md.StandardGaussianMixture(100, 2, 1, 1e10, X)
+model = md.SubDPMixture(100, 100, base)
+for i in range(500):
+    step = n_samples
     count = n_samples / step
     for iter in range(count):
-        model.update(X[iter * step: (iter+1) * step, :], count, sheduler.nextRate())
+        model.update(X[iter * step: (iter+1) * step, :], 10000000 * count, sheduler.nextRate())
 y = model.predict(X)
 y_unique = np.unique(y)
 colors = cm.rainbow(np.linspace(0.0, 1.0, y_unique.size))
@@ -33,7 +35,7 @@ for this_y, color in zip(y_unique, colors):
         stdvar = np.sqrt(1/ lmbd)
     else:
         mu = base.mu[this_y]
-        stdvar = 10
+        stdvar = std
     axis = plt.gca()
     ell = mpl.patches.Ellipse(mu, stdvar, stdvar, color=color)
     ell.set_alpha(0.5)
