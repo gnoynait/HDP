@@ -2,59 +2,64 @@ import numpy as np
 import scipy.special as sp
 
 epsilon = 1e-50
+
+
 def log_normalize(v):
-    ''' return log(sum(exp(v)))'''
+    """ return log(sum(exp(v)))"""
     log_max = 100.0
     max_val = np.max(v, 1)
     log_shift = log_max - np.log(v.shape[1]+1.0) - max_val
     tot = np.sum(np.exp(v + log_shift[:, np.newaxis]), 1)
 
     log_norm = np.log(tot) - log_shift
-    v = v - log_norm[:, np.newaxis]
-
+    v -= log_norm[:, np.newaxis]
     return (v, log_norm)
 
 class StandardGaussianMixture(object):
-    def __init__(self, k, dim, gamma0, lmbd):
-        self.k = k
+    def __init__(self, K, dim, gamma0, lmbd):
+        self.K = K
         self.dim = dim
         self.lmbd = lmbd
         self.gamma0 = gamma0
-        self.gamma = np.ones(k) * gamma0
-        self.mu = np.zeros((k, dim))
-    def update(self, X, z, scale, lr):
+        self.gamma = np.ones(K) * gamma0
+        self.mu = np.random.randn(K, dim)
+
+    def update(self, X, scale, lr, z):
         stat0 = scale * np.sum(z, axis=0)
         stat1 = scale * np.dot(z.T, X)
-
-        self.gamma = lr * (self.gamma0 + stat0) + (1-lr) * self.gamma
-
+        self.gamma = lr * (self.gamma0 + stat0) + (1 - lr) * self.gamma
         self.mu = lr * stat1 / self.gamma[:, np.newaxis] + (1.0 - lr) * self.mu
 
-    def logAssign(self, X):
-        sqX = np.sum(np.square(X), axis=1) 
+    def log_likelihood(self, X):
+        """
+        Compute likelihood given data X
+        :param X: n * dim matrix
+        :return: n * k matrix
+        """
+        sqX = np.sum(np.square(X), axis=1)
         muX = np.sum(self.mu[np.newaxis, :, :] * X[:, np.newaxis, :], axis=2)
-        logprob = -0.5 * self.lmbd * sqX[:, np.newaxis] -0.5 / self.gamma\
+        logprob = -0.5 * self.lmbd * sqX[:, np.newaxis] -0.5 * self.dim / self.gamma\
             + self.lmbd * muX\
             + 0.5 * self.lmbd * np.sum(np.square(self.mu), axis=1)[np.newaxis, :]\
             - 0.5 * self.dim * np.log(2 * np.pi / self.lmbd)
         return logprob
 
 class FullFactorSpheGaussianMixture(object):
-    def __init__(self, k, dim, gamma0, a0, b0):
+    def __init__(self, K, dim, gamma0, a0, b0):
         """
         precision: lambda ~ Gamma(a, b)
         mean: mu ~ Norm(nu, 1/(gamma*lambda))
         """
         self.dim = dim
-        self.k = k
+        self.K = K
         self.gamma0, self.a0, self.b0 = gamma0, a0, b0
-        self.gamma = np.ones(k) * gamma0
-        self.nu = np.random.randn(k, dim) * 5
-        self.a = np.ones(k) * a0
-        self.b = np.ones(k) * b0
+        self.gamma = np.ones(K) * gamma0
+        self.nu = np.random.randn(K, dim) * 50
+        self.a = np.ones(K) * a0
+        self.b = np.ones(K) * b0
         self._updateExpectation()
 
-    def update(self, X, z, scale, lr):
+    def update(self, X, scale, lr, z=None):
         stat0 = scale * np.sum(z, axis=0)
         stat1 = scale * np.dot(z.T, X)
         stat2 = scale * np.sum(z * np.sum(np.square(X), axis=1)[:, np.newaxis], axis=0)
@@ -79,7 +84,7 @@ class FullFactorSpheGaussianMixture(object):
         self.expc_lambdasqmu = self.expc_lambda * np.sum(np.square(self.nu), axis=1)\
                + self.dim / self.gamma
 
-    def logAssign(self, X):
+    def log_likelihood(self, X):
         sqX = np.sum(np.square(X), axis=1)
         muX = np.sum(self.expc_mu[np.newaxis, :, :] * X[:, np.newaxis, :], axis=2)
         logprob = -0.5 * self.expc_lambda * sqX[:, np.newaxis] \
@@ -105,15 +110,17 @@ class FullFactorSpheGaussianMixture(object):
         return np.sum(logp)
 
 class StickBreakingWeight(object):
-    def __init__(self, T, alpha):
+    def __init__(self, K, alpha):
         """
         T: trunction level
         alpha: concentration parameter
         """
-        self.T = T
+        self.K = K
         self.alpha = alpha
-        self.sticks = np.zeros((2, T-1))
-        self.update(np.ones((1, T))/T, 100000, 1)
+        self.sticks = np.zeros((2, K - 1))
+        self.sticks[0,:] = 1
+        self.sticks[1,:] = alpha
+        #self.update(np.ones((1, K)) / K, 100000, 1)
         self._calcLogWeight()
 
     def _calcLogWeight(self):
@@ -140,7 +147,7 @@ class StickBreakingWeight(object):
         lr: float
         """
         z = np.sum(z, axis=0)
-        stick0 = scale * z[:self.T-1] + 1.0
+        stick0 = scale * z[:self.K - 1] + 1.0
         stick1 = scale * np.flipud(np.cumsum(np.flipud(z[1:]))) + self.alpha
         self.sticks[0] = lr * stick0 + (1.0 - lr) * self.sticks[0]
         self.sticks[1] = lr * stick1 + (1.0 - lr) * self.sticks[1]
@@ -157,31 +164,32 @@ class StickBreakingWeight(object):
 
 class DPMixture(object):
     """Online DP model"""
-    def __init__(self, T, dim, model, weight):
+    def __init__(self, K, dim, model, weight):
         self.model = model
         self.weight = weight
+        self.K = K
 
-    def logAssign(self, X):
-        logLik = self.model.logAssign(X)
-        return logLik + self.weight.logWeight() 
+    def log_likelihood(self, X):
+        return self.model.log_likelihood(X) + self.weight.logWeight()
 
     def assign(self, X):
-        logz = self.logAssign(X)
+        logz = self.log_likelihood(X)
         logz, _ = log_normalize(logz)
         z = np.exp(logz)
         return z
 
     def predict(self, X):
-        logz = self.logAssign(X)
+        logz = self.model.log_likelihood(X) + self.weight.logWeight()
         return logz.argmax(axis=1)
 
-    def update(self, X, scale, lr):
-        z = self.assign(X)
+    def update(self, X, scale, lr, z=None):
+        if z is None:
+            z = self.assign(X)
         self.weight.update(z, scale, lr)
-        self.model.update(X, z, scale, lr)
+        self.model.update(X, scale, lr, z=z)
 
     def logLikelihood(self, X, scale):
-        Eloggauss = self.model.logAssign(X)
+        Eloggauss = self.model.log_likelihood(X)
         z = Eloggauss + self.weight.logWeight()
         z, _ = log_normalize(z)
         z = np.exp(z)
@@ -193,45 +201,47 @@ class DPMixture(object):
 
 class SubDPMixture(object):
     """Online HDP model"""
-    def __init__(self, K, dim, alpha, model):
-        self.model = model
-        self.phi = np.ones((K, K)) / K
+    def __init__(self, K, alpha, base):
+        self.base = base
+        self.K = K
+        logphi, _ = log_normalize(np.random.randn(K, base.K))
+        self.phi = np.exp(logphi)
         self.weight = StickBreakingWeight(K, alpha)
-
-    def logAssign(self, X):
-        logz = self.logAssign(X)
-        logk = np.dot(logz, self.phi.T)
-        logk = self.weight.logWeight() + logk
-        logz = np.dot(logk, self.phi)
-        return logz
-
+    """
+    def log_likelihood(self, X):
+        logl = self.base.log_likelihood(X)
+        logk, _ = log_normalize(np.dot(logl, self.phi.T) + self.weight.logWeight())
+        k = np.exp(logk)
+        z = np.dot(k, self.phi)
+        return z
+    """
     def assign(self, X):
-        logz = self.logAssign(X)
-        logz, _ = log_normalize(logz)
-        z = np.exp(logz)
+        logl = self.base.log_likelihood(X)
+        logk, _ = log_normalize(np.dot(logl, self.phi.T) + self.weight.logWeight())
+        k = np.exp(logk)
+        z = np.dot(k, self.phi)
         return z
 
     def predict(self, X):
-        logz = self.logAssign(X)
-        return logz.argmax(axis=1)
+        z = self.assign(X)
+        return z.argmax(axis=1)
 
-    def update(self, X, scale, lr):
-        logt = self.model.logAssign(X)
-        t, _ = log_normalize(logt)
-        t = np.exp(t)
-        logk = np.dot(logt, self.phi.T) + self.weight.logWeight()
-        k, _ = log_normalize(logk)
-        k = np.exp(k)
+    def update(self, X, scale, lr, z=None):
+        logl = self.base.log_likelihood(X)
+        logk, _ = log_normalize(np.dot(logl, self.phi.T) + self.weight.logWeight())
+        k = np.exp(logk)
+        logphi, _ = log_normalize(np.dot(k.T, logl))
+        newphi = np.exp(logphi)
+        newt = np.dot(k, self.phi)
         self.weight.update(k, scale, lr)
-        newphi = np.dot(k.T, t)
-        newt = np.dot(t.T, k)
-        self.model.update(X, newt, scale, lr)
-        self.phi = lr * newphi + (1 - lr) * newphi
+        self.phi = lr * newphi + (1 - lr) * self.phi
+        self.base.update(X, scale, lr, newt)
+
 
     def logLikelihood(self, X, scale):
         loglik = 0
         loglik += self.weight.entropy() + self.weight.expectLogPrior()\
-            + np.sum(np.dot(self.phi, self.model.weight.logWeight())) \
+            + np.sum(np.dot(self.phi, self.base.weight.logWeight())) \
             + np.sum(self.phi * np.log(self.phi))
         return loglik
 

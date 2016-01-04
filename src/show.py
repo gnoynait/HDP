@@ -13,7 +13,7 @@ n_samples = 50000
 centers = [(-25, -25), (-25, 25), (25, -25), (25, 25)]
 X, y = datasets.make_blobs(n_samples=n_samples, n_features=2, cluster_std=10,
                   centers=centers, shuffle=True, random_state=None)
-#X, y = datasets.make_blobs(n_samples=n_samples, n_features=2, cluster_std=1.0, 
+#X, y = datasets.make_blobs(n_samples=n_samples, n_features=2, cluster_std=1.0,
 #                  centers=10, shuffle=True, random_state=None)
 T = 20
 dim = 2
