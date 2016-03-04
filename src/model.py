@@ -23,15 +23,17 @@ def choose_sample(X, size):
     return X[idx,:]
 
 class StandardGaussianMixture(object):
-    def __init__(self, K, dim, gamma0, lmbd, X):
+    def __init__(self, K, dim, gamma0, lmbd, X, lrshdl):
         self.K = K
         self.dim = dim
         self.lmbd = lmbd
         self.gamma0 = gamma0
         self.gamma = np.ones(K) * gamma0
         self.mu = choose_sample(X, K)
+        self.lrshdl = lrshdl
 
-    def update(self, X, scale, lr, z):
+    def update(self, X, scale, z):
+        lr = self.lrshdl.nextRate()
         stat0 = scale * np.sum(z, axis=0)
         stat1 = scale * np.dot(z.T, X)
         self.gamma = lr * (self.gamma0 + stat0) + (1 - lr) * self.gamma
@@ -52,7 +54,7 @@ class StandardGaussianMixture(object):
         return logprob
 
 class FullFactorSpheGaussianMixture(object):
-    def __init__(self, K, dim, gamma0, a0, b0, X):
+    def __init__(self, K, dim, gamma0, a0, b0, X, lrshdl):
         """
         precision: lambda ~ Gamma(a, b)
         mean: mu ~ Norm(nu, 1/(gamma*lambda))
@@ -65,8 +67,10 @@ class FullFactorSpheGaussianMixture(object):
         self.a = np.ones(K) * a0
         self.b = np.ones(K) * b0
         self._updateExpectation()
+        self.lrshdl = lrshdl
 
-    def update(self, X, scale, lr, z=None):
+    def update(self, X, scale, z=None):
+        lr = self.lrshdl.nextRate()
         stat0 = scale * np.sum(z, axis=0)
         stat1 = scale * np.dot(z.T, X)
         stat2 = scale * np.sum(z * np.sum(np.square(X), axis=1)[:, np.newaxis], axis=0)
@@ -171,10 +175,11 @@ class StickBreakingWeight(object):
 
 class DPMixture(object):
     """Online DP model"""
-    def __init__(self, K, dim, model, weight):
+    def __init__(self, K, dim, model, weight, lrshdl):
         self.model = model
         self.weight = weight
         self.K = K
+        self.lrshdl = lrshdl
 
     def log_likelihood(self, X):
         return self.model.log_likelihood(X) + self.weight.logWeight()
@@ -189,11 +194,12 @@ class DPMixture(object):
         logz = self.model.log_likelihood(X) + self.weight.logWeight()
         return logz.argmax(axis=1)
 
-    def update(self, X, scale, lr, z=None):
+    def update(self, X, scale, z=None):
+        lr = self.lrshdl.nextRate()
         if z is None:
             z = self.assign(X)
         self.weight.update(z, scale, lr)
-        self.model.update(X, scale, lr, z=z)
+        self.model.update(X, scale, z=z)
 
     def logLikelihood(self, X, scale):
         Eloggauss = self.model.log_likelihood(X)
@@ -208,12 +214,13 @@ class DPMixture(object):
 
 class SubDPMixture(object):
     """Online HDP model"""
-    def __init__(self, K, alpha, base):
+    def __init__(self, K, alpha, base, lrshdl):
         self.base = base
         self.K = K
         logphi, _ = log_normalize(np.random.randn(K, base.K))
         self.phi = np.exp(logphi)
         self.weight = StickBreakingWeight(K, alpha)
+        self.lrshdl = lrshdl
     """
     def log_likelihood(self, X):
         logl = self.base.log_likelihood(X)
@@ -233,7 +240,8 @@ class SubDPMixture(object):
         z = self.assign(X)
         return z.argmax(axis=1)
 
-    def update(self, X, scale, lr, z=None):
+    def update(self, X, scale, z=None):
+        lr = self.lrshdl.nextRate()
         logl = self.base.log_likelihood(X)
         logk, _ = log_normalize(np.dot(logl, self.phi.T) + self.weight.logWeight())
         k = np.exp(logk)
@@ -242,7 +250,7 @@ class SubDPMixture(object):
         newt = np.dot(k, self.phi)
         self.weight.update(k, scale, lr)
         self.phi = lr * newphi + (1 - lr) * self.phi
-        self.base.update(X, scale, lr, newt)
+        self.base.update(X, scale, newt)
 
 
     def logLikelihood(self, X, scale):
@@ -296,6 +304,7 @@ class NonBayesianWeight(object):
         z = np.sum(z, axis=0)
         z = z / np.sum(z)
         self.weight = lr * z + (1-lr) * self.weight
+
     def entropy(self):
         return 0.0
 
@@ -306,10 +315,11 @@ class DirichletWeight(object):
         self.weight = np.ones(T) * alpha
 
     def logWeight(self):
-        return np.log(self.weight / np.sum(self.weight))
+        return np.log(self.weight / np.sum(self.weight) + epsilon)
 
-    def update(self, z, lr):
-        self.weight = lr * (np.log(z) + self.alpha) + (1.0-lr) * self.weight
+    def update(self, z, scale, lr):
+        stat = np.sum(np.log(z + epsilon), axis=0) * scale
+        self.weight = lr * (stat + (self.alpha - 1.0)) + (1.0-lr) * (self.weight - 1.0) + 1.0
     def entropy(self):
         s = np.sum(self.weight)
         b = np.sum(sp.gammaln(self.weight)) - sp.gammaln(s)
@@ -322,3 +332,4 @@ class ConstSheduler(object):
         self.lr = learningRate
     def nextRate(self):
         return self.lr
+
